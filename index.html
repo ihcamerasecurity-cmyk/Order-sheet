@@ -276,12 +276,21 @@ async function fetchApiKey(){
 function ticketHtml(o, i, side){
   const prefix = side==="fc" ? "F.C. " : side==="other" ? "O " : "S ";
   const flav = o.flavour ? `<div><b>Flav</b> ${esc(o.flavour)}</div>` : "";
+  const rate = o.rateNote ? `<div><b>Rate</b> ${esc(o.rateNote)}</div>` : "";
+  let cakeName = "";
+  if (o.nameOnCakeEn || o.nameOnCakeUr) {
+    const full = [o.nameOnCakeEn, o.nameOnCakeUr].filter(Boolean).join(" / ");
+    const big = full.length > 18 ? "1.05rem" : full.length > 10 ? "0.95rem" : "0.85rem";
+    cakeName = `<div style="grid-column:1/-1;margin-top:2px"><b>On cake</b><div style="font-size:${big};font-weight:900;letter-spacing:.02em;line-height:1.2;margin-top:1px">${esc(full)}</div></div>`;
+  }
   return `<div class="ticket" onclick="openEdit('${side}',${i})">
     <h4><span>${esc(prefix+(i+1))}</span><span class="nums">${esc(o.qty||"")}</span></h4>
     <div class="top">
       <div><b>Shop</b> <span class="shop-en">${esc(o.shopName||"—")}</span></div>
       <div><b>Name</b> ${esc(o.customerName||"—")}</div>
       ${flav}
+      ${rate}
+      ${cakeName}
     </div>
     <div class="detail">${esc(o.detailUrdu||"")}</div>
   </div>`;
@@ -372,8 +381,11 @@ function normalize(o, type){
   return {
     shopName: o.shopName || "—",
     customerName: o.customerName || "—",
+    nameOnCakeEn: o.nameOnCakeEn || "",
+    nameOnCakeUr: o.nameOnCakeUr || "",
     qty: o.qty || "—",
     flavour: o.flavour || "",
+    rateNote: o.rateNote || "",
     detailUrdu: o.detailUrdu || "",
     type: o.type || type
   };
@@ -388,11 +400,62 @@ function addManual(side){
   render();
 }
 
-const SYSTEM = `You are a professional bakery order clerk AI (Pakistan).
-Return ONLY JSON:
-{"orders":[{"side":"fc|sweets|other","shopName":"English","customerName":"","qty":"4 Pound","flavour":"Chocolate","detailUrdu":"line1\\nline2"}]}
-side: fc=cream/F.C.; sweets=mithai; other=jam/special note/misc.
-detailUrdu: short Urdu lines. Extract qty, flavour, name-on-cake.`;
+const SYSTEM = `You are the official order-writing AI for a professional bakery company in Pakistan.
+Write every order like a trained company staff: complete, clear, formal, no missing points.
+
+Return ONLY valid JSON (no markdown):
+{
+  "orders": [
+    {
+      "side": "fc" | "sweets" | "other",
+      "shopName": "English only",
+      "customerName": "",
+      "nameOnCakeEn": "",
+      "nameOnCakeUr": "",
+      "qty": "4 Pound",
+      "flavour": "",
+      "rateNote": "",
+      "detailUrdu": "complete professional lines"
+    }
+  ]
+}
+
+COMPANY WRITING STYLE (detailUrdu):
+- Write FULL professional order text, not 1–2 weak lines.
+- Cover: size (pounds first line), product type, flavour, design/photo instructions, filling, topping, name on cake, special notes, rate if butter.
+- Use clear short lines (one point per line), formal bakery language in Urdu.
+- First line ALWAYS quantity: e.g. "4 Pound cake"
+- Do not skip details the customer mentioned.
+- Do not add fake details that were not said.
+- Sound like a company order slip, not a chat reply.
+
+NAME ON CAKE (very important):
+- If a name must be written on the cake, fill nameOnCakeEn AND nameOnCakeUr.
+- In detailUrdu put a clear strong line for the name, e.g.:
+  اوپر بڑا نام لکھنا ہے: Muhammad Naeem / محمد نعیم
+- Long names must stay COMPLETE (do not shorten). Write the full name in BOTH English and Urdu.
+- Present the name prominently (dedicated line, not buried in other text).
+
+SHOP:
+- shopName always English (transliterate Urdu shop names).
+
+RATES:
+- Butter cake / butter cream → flavour Butter/Butter Cream and rateNote + detail line: "Rate Rs.1500 per pound"
+
+SIDE:
+- fc = F.C. / fresh cream / butter cream cake
+- sweets = mithai / sweets
+- other = jam / special note / misc
+
+Example detailUrdu:
+4 Pound cake
+Fresh cream / Butter cream cake
+Chocolate flavour میں تیار کرنا ہے
+تصویر کے مطابق ڈیزائن بنانا ہے
+اندر دانہ لگانا ہے
+Rate Rs.1500 per pound
+اوپر بڑا نام لکھنا ہے: Naeem / نعیم
+`;
 
 async function aiAdd(){
   const raw = $("raw").value.trim();
@@ -456,4 +519,4 @@ ensureDay();
 render();
 </script>
 </body>
-  </html>
+</html>
