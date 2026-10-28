@@ -65,6 +65,17 @@
     padding:5px 10px; border-bottom:1.5px solid #111; background:#f1f5f9;
     font-weight:800; font-size:.8rem; flex-shrink:0;
   }
+  .sheet-shop {
+    position:relative; z-index:2;
+    text-align:center;
+    font-weight:900;
+    font-size:1.15rem;
+    letter-spacing:.03em;
+    padding:6px 10px 4px;
+    border-bottom:1.5px solid #111;
+    background:#fff;
+    color:#0f172a;
+  }
   .cols { position:relative; z-index:1; flex:1; display:grid; min-height:0; grid-template-columns:1fr; }
   .cols.c1 { grid-template-columns:1fr; }
   .cols.c2 { grid-template-columns:1fr 1fr; }
@@ -277,20 +288,20 @@ function ticketHtml(o, i, side){
   const prefix = side==="fc" ? "F.C. " : side==="other" ? "O " : "S ";
   const flav = o.flavour ? `<div><b>Flav</b> ${esc(o.flavour)}</div>` : "";
   const rate = o.rateNote ? `<div><b>Rate</b> ${esc(o.rateNote)}</div>` : "";
-  let cakeName = "";
+  // Name: cake name preferred, else customer name — same line style as other fields
+  let nameVal = "";
   if (o.nameOnCakeEn || o.nameOnCakeUr) {
-    const full = [o.nameOnCakeEn, o.nameOnCakeUr].filter(Boolean).join(" / ");
-    const big = full.length > 18 ? "1.05rem" : full.length > 10 ? "0.95rem" : "0.85rem";
-    cakeName = `<div style="grid-column:1/-1;margin-top:2px"><b>On cake</b><div style="font-size:${big};font-weight:900;letter-spacing:.02em;line-height:1.2;margin-top:1px">${esc(full)}</div></div>`;
+    nameVal = [o.nameOnCakeEn, o.nameOnCakeUr].filter(Boolean).join(" / ");
+  } else {
+    nameVal = o.customerName || "—";
   }
   return `<div class="ticket" onclick="openEdit('${side}',${i})">
     <h4><span>${esc(prefix+(i+1))}</span><span class="nums">${esc(o.qty||"")}</span></h4>
     <div class="top">
-      <div><b>Shop</b> <span class="shop-en">${esc(o.shopName||"—")}</span></div>
-      <div><b>Name</b> ${esc(o.customerName||"—")}</div>
+      <div style="grid-column:1/-1"><b>Shop</b> <span class="shop-en" style="font-size:0.95rem">${esc(o.shopName||"—")}</span></div>
+      <div style="grid-column:1/-1"><b>Name.</b> ${esc(nameVal)}</div>
       ${flav}
       ${rate}
-      ${cakeName}
     </div>
     <div class="detail">${esc(o.detailUrdu||"")}</div>
   </div>`;
@@ -302,6 +313,14 @@ function colHtml(title, side, list, cls){
     <div class="list">${list.map((o,i)=>ticketHtml(o,i,side)).join("")}</div>
   </div>`;
 }
+function primaryShops(s){
+  const names = [];
+  [...s.fc, ...s.sweets, ...s.other].forEach(o => {
+    const n = (o.shopName || "").trim();
+    if (n && n !== "—" && !names.includes(n)) names.push(n);
+  });
+  return names.slice(0, 3).join(" · ");
+}
 function buildSheetHtml(s, idx, totalSheets){
   const parts = [];
   if (s.sweets.length) parts.push(colHtml("SWEETS ORDER", "sweets", s.sweets, "sweets"));
@@ -312,11 +331,16 @@ function buildSheetHtml(s, idx, totalSheets){
   const body = n
     ? `<div class="cols ${colsClass}">${parts.join("")}</div>`
     : `<div class="empty-sheet">No orders on this sheet</div>`;
+  const shops = primaryShops(s);
+  const shopLine = shops
+    ? `<div class="sheet-shop">${esc(shops)}</div>`
+    : "";
   return `<div class="sheet">
     <div class="sheet-head">
       <span>Sheet ${idx+1} / ${totalSheets}</span>
       <span>${esc(day)}</span>
     </div>
+    ${shopLine}
     ${body}
     <div class="sheet-foot">Develop by Muhammad Naeem</div>
   </div>`;
@@ -400,61 +424,34 @@ function addManual(side){
   render();
 }
 
-const SYSTEM = `You are the official order-writing AI for a professional bakery company in Pakistan.
-Write every order like a trained company staff: complete, clear, formal, no missing points.
+const SYSTEM = `You are bakery order desk AI for Pakistan (Hafiz-style order slips).
+User text may be Roman Urdu, Urdu, or English. Understand meaning.
 
-Return ONLY valid JSON (no markdown):
+Return ONLY JSON:
 {
   "orders": [
     {
       "side": "fc" | "sweets" | "other",
-      "shopName": "English only",
+      "shopName": "English",
       "customerName": "",
       "nameOnCakeEn": "",
       "nameOnCakeUr": "",
       "qty": "4 Pound",
       "flavour": "",
       "rateNote": "",
-      "detailUrdu": "complete professional lines"
+      "detailUrdu": "only what customer said"
     }
   ]
 }
 
-COMPANY WRITING STYLE (detailUrdu):
-- Write FULL professional order text, not 1–2 weak lines.
-- Cover: size (pounds first line), product type, flavour, design/photo instructions, filling, topping, name on cake, special notes, rate if butter.
-- Use clear short lines (one point per line), formal bakery language in Urdu.
-- First line ALWAYS quantity: e.g. "4 Pound cake"
-- Do not skip details the customer mentioned.
-- Do not add fake details that were not said.
-- Sound like a company order slip, not a chat reply.
-
-NAME ON CAKE (very important):
-- If a name must be written on the cake, fill nameOnCakeEn AND nameOnCakeUr.
-- In detailUrdu put a clear strong line for the name, e.g.:
-  اوپر بڑا نام لکھنا ہے: Muhammad Naeem / محمد نعیم
-- Long names must stay COMPLETE (do not shorten). Write the full name in BOTH English and Urdu.
-- Present the name prominently (dedicated line, not buried in other text).
-
-SHOP:
-- shopName always English (transliterate Urdu shop names).
-
-RATES:
-- Butter cake / butter cream → flavour Butter/Butter Cream and rateNote + detail line: "Rate Rs.1500 per pound"
-
-SIDE:
-- fc = F.C. / fresh cream / butter cream cake
-- sweets = mithai / sweets
-- other = jam / special note / misc
-
-Example detailUrdu:
-4 Pound cake
-Fresh cream / Butter cream cake
-Chocolate flavour میں تیار کرنا ہے
-تصویر کے مطابق ڈیزائن بنانا ہے
-اندر دانہ لگانا ہے
-Rate Rs.1500 per pound
-اوپر بڑا نام لکھنا ہے: Naeem / نعیم
+RULES:
+1) Shop name is often written FIRST in the message. Detect it and put in shopName as English transliteration (e.g. داروغی والا / Daroghy wala → Darogha Wala).
+2) detailUrdu: write ONLY what the customer said, in clear Urdu lines. Do NOT add extra company padding, extra steps, or invented details.
+3) First detail line = quantity if given (e.g. 4 Pound cake).
+4) Name on cake: full name as customer wrote — nameOnCakeEn + nameOnCakeUr. Do not shorten long names.
+5) Butter cake/cream → flavour Butter + rateNote "Rate Rs.1500 per pound" and one detail line for rate only if butter.
+6) side: fc = cream/F.C./butter cream cake; sweets = mithai; other = jam/note/misc.
+7) Keep detailUrdu short and faithful — no more text than needed to reflect the order.
 `;
 
 async function aiAdd(){
