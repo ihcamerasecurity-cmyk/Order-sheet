@@ -239,30 +239,66 @@ let cachedKey = "";
 let cachedModel = DEFAULT_MODEL;
 
 $("dayDate").value = day;
-$("dayDate").onchange = () => { day = $("dayDate").value || todayStr(); sheetIndex = 0; ensureDay(); render(); };
+$("dayDate").onchange = () => { day = $("dayDate").value || todayStr(); sheetIndex = 0; loadDayOnline(); };
 $("maxOrders").value = localStorage.getItem("od_max") || "10";
 $("maxOrders").onchange = () => localStorage.setItem("od_max", $("maxOrders").value);
 
 function maxPerSheet(){ return Number($("maxOrders").value || 10); }
 function loadDb(){ try { return JSON.parse(localStorage.getItem(LS_KEY)||"{}"); } catch(e){ return {}; } }
-function saveDb(){ localStorage.setItem(LS_KEY, JSON.stringify(db)); }
+function saveDbLocal(){ localStorage.setItem(LS_KEY, JSON.stringify(db)); }
 function emptySheet(){ return { sweets:[], fc:[], other:[] }; }
-function ensureDay(){
+
+function ensureDayLocal(){
   if (!db[day]) db[day] = { sheets:[ emptySheet() ] };
-  if (!db[day].sheets.length) db[day].sheets = [ emptySheet() ];
+  if (!db[day].sheets || !db[day].sheets.length) db[day].sheets = [ emptySheet() ];
   db[day].sheets.forEach(s => {
     if (!s.sweets) s.sweets = [];
     if (!s.fc) s.fc = [];
     if (!s.other) s.other = [];
   });
-  if (sheetIndex >= db[day].sheets.length) sheetIndex = db[day].sheets.length-1;
-  saveDb();
+  if (sheetIndex >= db[day].sheets.length) sheetIndex = Math.max(0, db[day].sheets.length-1);
 }
-function curSheet(){ ensureDay(); return db[day].sheets[sheetIndex]; }
-function sheetTotal(s){ return s.sweets.length + s.fc.length + s.other.length; }
+function ensureDay(){ ensureDayLocal(); saveDbLocal(); }
+function saveDb(){
+  ensureDayLocal();
+  saveDbLocal();
+  saveDayOnline();
+}
+async function saveDayOnline(){
+  try {
+    const payload = { sheets: db[day].sheets, updatedAt: Date.now() };
+    await fetch(DB + "/orderdesk_days/" + encodeURIComponent(day) + ".json", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+  } catch(e) { console.warn("online save", e); }
+}
+async function loadDayOnline(){
+  setStatus("Loading…");
+  try {
+    const r = await fetch(DB + "/orderdesk_days/" + encodeURIComponent(day) + ".json?t=" + Date.now());
+    if (r.ok) {
+      const j = await r.json();
+      if (j && Array.isArray(j.sheets) && j.sheets.length) {
+        db[day] = { sheets: j.sheets };
+        sheetIndex = 0;
+        saveDbLocal();
+        setStatus("Online data loaded · " + day);
+        render();
+        return;
+      }
+    }
+  } catch(e) { console.warn(e); }
+  ensureDayLocal();
+  setStatus("Local / empty · " + day);
+  render();
+}
+function curSheet(){ ensureDayLocal(); return db[day].sheets[sheetIndex]; }
+function sheetTotal(s){ return (s.sweets||[]).length + (s.fc||[]).length + (s.other||[]).length; }
 
 function newSheet(){
-  ensureDay();
+  ensureDayLocal();
   db[day].sheets.push(emptySheet());
   sheetIndex = db[day].sheets.length-1;
   saveDb(); render();
@@ -298,7 +334,7 @@ function ticketHtml(o, i, side){
   return `<div class="ticket" onclick="openEdit('${side}',${i})">
     <h4><span>${esc(prefix+(i+1))}</span><span class="nums">${esc(o.qty||"")}</span></h4>
     <div class="top">
-      <div style="grid-column:1/-1"><b>Shop</b> <span class="shop-en" style="font-size:0.95rem">${esc(o.shopName||"—")}</span></div>
+      <div style="grid-column:1/-1"><b>Shop.</b> <span class="shop-en" style="font-size:0.95rem">${esc(o.shopName||"—")}</span></div>
       <div style="grid-column:1/-1"><b>Name.</b> ${esc(nameVal)}</div>
       ${flav}
       ${rate}
@@ -319,8 +355,47 @@ function primaryShops(s){
     const n = (o.shopName || "").trim();
     if (n && n !== "—" && !names.includes(n)) names.push(n);
   });
-  return names.slice(0, 3).join(" · ");
+  return names.slice(0, 6).join(" · ");
 }
+
+/** Shop-wise totals for current sheet (and label type). */
+function shopSummary(s){
+  const map = {};
+  function add(list, type){
+    list.forEach(o => {
+      const name = (o.shopName || "—").trim() || "—";
+      if (!map[name]) map[name] = { sweets:0, fc:0, other:0 };
+      map[name][type]++;
+    });
+  }
+  add(s.sweets||[], "sweets");
+  add(s.fc||[], "fc");
+  add(s.other||[], "other");
+  return map;
+}
+
+function summaryHtml(s){
+  const map = shopSummary(s);
+  const keys = Object.keys(map);
+  if (!keys.length) return "";
+  let total = 0;
+  const lines = keys.map((name, i) => {
+    const m = map[name];
+    const parts = [];
+    if (m.sweets) parts.push("Sweet " + m.sweets);
+    if (m.fc) parts.push("F.C. " + m.fc);
+    if (m.other) parts.push("Other " + m.other);
+    const c = m.sweets + m.fc + m.other;
+    total += c;
+    return `<div class="sum-line"><span class="n">${i+1}.</span><span>${esc(name)} — ${esc(parts.join(", "))}</span></div>`;
+  }).join("");
+  return `<div class="sheet-summary">
+    <h4>TOTAL ORDERS · SHOP WISE</h4>
+    ${lines}
+    <div class="sum-total">Total shops: ${keys.length} · Total orders: ${total}</div>
+  </div>`;
+}
+
 function buildSheetHtml(s, idx, totalSheets){
   const parts = [];
   if (s.sweets.length) parts.push(colHtml("SWEETS ORDER", "sweets", s.sweets, "sweets"));
@@ -335,6 +410,8 @@ function buildSheetHtml(s, idx, totalSheets){
   const shopLine = shops
     ? `<div class="sheet-shop">${esc(shops)}</div>`
     : "";
+  // Summary fills remaining space at bottom (always when there is at least 1 order)
+  const sum = (sheetTotal(s) > 0) ? summaryHtml(s) : "";
   return `<div class="sheet">
     <div class="sheet-head">
       <span>Sheet ${idx+1} / ${totalSheets}</span>
@@ -342,9 +419,11 @@ function buildSheetHtml(s, idx, totalSheets){
     </div>
     ${shopLine}
     ${body}
+    ${sum}
     <div class="sheet-foot">Develop by Muhammad Naeem</div>
   </div>`;
 }
+
 function render(){
   ensureDay();
   const sheets = db[day].sheets;
@@ -445,7 +524,7 @@ Return ONLY JSON:
 }
 
 RULES:
-1) Shop name is often written FIRST in the message. Detect it and put in shopName as English transliteration (e.g. داروغی والا / Daroghy wala → Darogha Wala).
+1) Shop name is often written FIRST. ALWAYS fill shopName (English transliteration). Never leave shopName empty if any shop is mentioned. Also put shop clearly so ticket shows Shop. line.
 2) detailUrdu: write ONLY what the customer said, in clear Urdu lines. Do NOT add extra company padding, extra steps, or invented details.
 3) First detail line = quantity if given (e.g. 4 Pound cake).
 4) Name on cake: full name as customer wrote — nameOnCakeEn + nameOnCakeUr. Do not shorten long names.
@@ -512,8 +591,8 @@ function exportDay(){
   a.download = "orders-"+day+".json"; a.click();
 }
 
-ensureDay();
-render();
+ensureDayLocal();
+loadDayOnline();
 </script>
 </body>
 </html>
