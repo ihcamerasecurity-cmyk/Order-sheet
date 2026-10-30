@@ -49,7 +49,7 @@
   .sheet-tabs button.active { outline:2px solid #4ade80; }
   .sheet-wrap { display:flex; justify-content:center; }
   .sheet {
-    width:100%; max-width:1120px; aspect-ratio:297/210;
+    width:100%; max-width:1120px; min-height:min(70vh, 520px);
     background:var(--paper); color:var(--ink); border-radius:3px;
     box-shadow:0 10px 32px rgba(0,0,0,.45);
     display:flex; flex-direction:column; position:relative; overflow:hidden;
@@ -76,11 +76,11 @@
     background:#fff;
     color:#0f172a;
   }
-  .cols { position:relative; z-index:1; flex:1; display:grid; min-height:0; grid-template-columns:1fr; }
+  .cols { position:relative; z-index:1; flex:1 1 auto; display:grid; min-height:0; grid-template-columns:1fr; align-content:start; }
   .cols.c1 { grid-template-columns:1fr; }
   .cols.c2 { grid-template-columns:1fr 1fr; }
   .cols.c3 { grid-template-columns:1fr 1fr 1fr; }
-  .col { padding:6px 7px; border-right:1.5px solid #222; display:flex; flex-direction:column; gap:5px; min-height:0; }
+  .col { padding:6px 7px; border-right:1.5px solid #222; display:flex; flex-direction:column; gap:5px; min-height:0; justify-content:flex-start; align-content:flex-start; }
   .col:last-child { border-right:0; }
   .col-title {
     text-align:center; font-weight:900; font-size:.75rem; letter-spacing:.04em;
@@ -89,10 +89,12 @@
   .col.sweets .col-title { background:#ecfdf5; }
   .col.fc .col-title { background:#fff7ed; }
   .col.other .col-title { background:#eff6ff; }
-  .list { display:flex; flex-direction:column; gap:5px; flex:1; min-height:0; }
+  .list { display:flex; flex-direction:column; gap:5px; flex:0 1 auto; align-content:flex-start; }
   .ticket {
     border:1.5px solid #111; padding:4px 6px; background:#fff; cursor:pointer;
     font-size:.72rem; line-height:1.25;
+    flex:0 0 auto; /* 1 order bhi chhota box — full page nahi */
+    max-width:100%;
   }
   .ticket:hover { box-shadow:inset 0 0 0 1.5px #0B8457; }
   .ticket h4 {
@@ -114,6 +116,15 @@
     font-size:.65rem; color:#555; padding:4px 8px;
     border-top:1px solid #ccc; background:#fafafa; flex-shrink:0;
   }
+  .sheet-summary {
+    position:relative; z-index:2; margin-top:auto; flex-shrink:0;
+    border-top:1.5px solid #111; background:#f8fafc; padding:6px 10px;
+    font-size:.72rem;
+  }
+  .sheet-summary h4 { margin:0 0 4px; font-size:.78rem; letter-spacing:.04em; text-align:center; }
+  .sum-line { display:flex; gap:6px; margin:1px 0; }
+  .sum-line .n { font-weight:800; min-width:1.2em; }
+  .sum-total { margin-top:4px; font-weight:800; border-top:1px dashed #999; padding-top:3px; text-align:center; }
   .empty-sheet {
     flex:1; display:flex; align-items:center; justify-content:center;
     color:#999; font-style:italic; font-size:.85rem; position:relative; z-index:1;
@@ -139,9 +150,14 @@
     .sheet-wrap { display:block; }
     .sheet {
       box-shadow:none; max-width:100%; width:100%;
-      aspect-ratio:auto; min-height:180mm;
+      aspect-ratio:auto; min-height:auto;
+      height:auto;
       page-break-after:always; break-after:page;
     }
+    .sheet:last-child { page-break-after:auto; break-after:auto; }
+    .ticket { flex:0 0 auto; }
+    .list { flex:0 1 auto; }
+    .sheet-summary { margin-top:12px; }
     .ticket { cursor:default; break-inside:avoid; }
     .ticket:hover { box-shadow:none; }
   }
@@ -193,8 +209,11 @@
     </div>
     <div class="sheet-tabs" id="sheetTabs"></div>
     <div class="toolbar">
-      <button class="amber sm" onclick="printDay()">Print all</button>
-      <button class="secondary sm" onclick="printCurrent()">Print current</button>
+      <button class="amber sm" onclick="printMode('all')">Print All</button>
+      <button class="secondary sm" onclick="printMode('fc')">Print F.C. only</button>
+      <button class="secondary sm" onclick="printMode('other')">Print Other only</button>
+      <button class="secondary sm" onclick="printMode('sweets')">Print Sweets only</button>
+      <button class="secondary sm" onclick="printCurrent()">Print current sheet</button>
       <button class="secondary sm" onclick="exportDay()">Export</button>
     </div>
     <div class="sheet-wrap" id="printArea"><div class="sheet" id="sheet"></div></div>
@@ -396,25 +415,36 @@ function summaryHtml(s){
   </div>`;
 }
 
-function buildSheetHtml(s, idx, totalSheets){
+function filterSheet(s, mode){
+  if (!mode || mode === "all") return { sweets:s.sweets||[], fc:s.fc||[], other:s.other||[] };
+  return {
+    sweets: mode === "sweets" ? (s.sweets||[]) : [],
+    fc: mode === "fc" ? (s.fc||[]) : [],
+    other: mode === "other" ? (s.other||[]) : []
+  };
+}
+
+function buildSheetHtml(s, idx, totalSheets, mode){
+  const f = filterSheet(s, mode || "all");
   const parts = [];
-  if (s.sweets.length) parts.push(colHtml("SWEETS ORDER", "sweets", s.sweets, "sweets"));
-  if (s.fc.length) parts.push(colHtml("F.C. ORDER", "fc", s.fc, "fc"));
-  if (s.other.length) parts.push(colHtml("OTHER / NOTE", "other", s.other, "other"));
+  if (f.sweets.length) parts.push(colHtml("SWEETS ORDER", "sweets", f.sweets, "sweets"));
+  if (f.fc.length) parts.push(colHtml("F.C. ORDER", "fc", f.fc, "fc"));
+  if (f.other.length) parts.push(colHtml("OTHER / NOTE", "other", f.other, "other"));
   const n = parts.length;
   const colsClass = n <= 1 ? "c1" : n === 2 ? "c2" : "c3";
   const body = n
     ? `<div class="cols ${colsClass}">${parts.join("")}</div>`
     : `<div class="empty-sheet">No orders on this sheet</div>`;
-  const shops = primaryShops(s);
+  const shops = primaryShops(f);
   const shopLine = shops
     ? `<div class="sheet-shop">${esc(shops)}</div>`
     : "";
-  // Summary fills remaining space at bottom (always when there is at least 1 order)
-  const sum = (sheetTotal(s) > 0) ? summaryHtml(s) : "";
+  /* Summary only when empty space / at least 1 order — sits under tickets */
+  const sum = (sheetTotal(f) > 0) ? summaryHtml(f) : "";
+  const modeTag = (!mode || mode === "all") ? "" : " · " + String(mode).toUpperCase();
   return `<div class="sheet">
     <div class="sheet-head">
-      <span>Sheet ${idx+1} / ${totalSheets}</span>
+      <span>Sheet ${idx+1} / ${totalSheets}${modeTag}</span>
       <span>${esc(day)}</span>
     </div>
     ${shopLine}
@@ -578,13 +608,29 @@ async function aiAdd(){
 }
 
 function printCurrent(){ window.print(); }
-function printDay(){
+
+/** mode: all | fc | other | sweets — alag print ya ikhatta */
+function printMode(mode){
+  ensureDayLocal();
   const area = $("printArea");
-  const sheets = db[day].sheets;
-  area.innerHTML = sheets.map((s,i)=>buildSheetHtml(s,i,sheets.length)).join("");
-  window.print();
-  render();
+  const all = db[day].sheets || [];
+  const filtered = [];
+  all.forEach(s => {
+    const f = filterSheet(s, mode);
+    if (sheetTotal(f) > 0) filtered.push(f);
+  });
+  if (!filtered.length) {
+    setStatus("Is filter me koi order nahi · " + mode);
+    return;
+  }
+  area.innerHTML = filtered.map((s,i)=>buildSheetHtml(s, i, filtered.length, mode)).join("");
+  setTimeout(() => {
+    window.print();
+    render();
+  }, 120);
 }
+
+function printDay(){ printMode("all"); }
 function exportDay(){
   const a = document.createElement("a");
   a.href = URL.createObjectURL(new Blob([JSON.stringify(db[day],null,2)],{type:"application/json"}));
