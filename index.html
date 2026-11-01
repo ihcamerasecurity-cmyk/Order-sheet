@@ -233,6 +233,13 @@
       <strong id="dayLabel">—</strong>
       <span class="chip" id="sheetCount">1 sheet</span>
       <span style="color:var(--muted);font-size:.78rem" id="ticketCount">0</span>
+      <span class="chip" id="slotChip" style="background:#1e3a5f;color:#93c5fd">2nd Orders</span>
+    </div>
+    <div class="toolbar" id="slotBar" style="margin-bottom:8px">
+      <button class="secondary sm" type="button" onclick="showActive()">Current slot</button>
+      <button class="secondary sm" type="button" onclick="showHistory()">History</button>
+      <button class="amber sm" type="button" id="btnComplete" style="display:none" onclick="completeSlot()">Complete (7PM+)</button>
+      <span style="color:var(--muted);font-size:.75rem" id="slotHint"></span>
     </div>
     <div class="sheet-tabs" id="sheetTabs"></div>
     <div class="toolbar">
@@ -264,7 +271,7 @@
 </div>
 
 <script>
-const LS_KEY = "orderdesk_v5";
+const LS_KEY = "orderdesk_v6";
 const DB = "https://website-create-ec499-default-rtdb.firebaseio.com";
 const CFG_URL = DB + "/orderdesk_config.json";
 const DEFAULT_MODEL = "openai/gpt-oss-120b";
@@ -295,7 +302,9 @@ function saveDbLocal(){ localStorage.setItem(LS_KEY, JSON.stringify(db)); }
 function emptySheet(){ return { sweets:[], fc:[], other:[] }; }
 
 function ensureDayLocal(){
-  if (!db[day]) db[day] = { sheets:[ emptySheet() ] };
+  if (!db[day]) db[day] = { sheets:[ emptySheet() ], history:[], slotLabel:"2nd Orders" };
+  if (!db[day].history) db[day].history = [];
+  if (!db[day].slotLabel) db[day].slotLabel = "2nd Orders";
   if (!db[day].sheets || !db[day].sheets.length) db[day].sheets = [ emptySheet() ];
   db[day].sheets.forEach(s => {
     if (!s.sweets) s.sweets = [];
@@ -303,6 +312,51 @@ function ensureDayLocal(){
     if (!s.other) s.other = [];
   });
   if (sheetIndex >= db[day].sheets.length) sheetIndex = Math.max(0, db[day].sheets.length-1);
+}
+function isAfter7pm(){
+  const n = new Date();
+  return n.getHours() > 19 || (n.getHours() === 19 && n.getMinutes() >= 0);
+}
+function viewingHistory(){ return window._histView === true; }
+function showActive(){
+  window._histView = false;
+  window._histIndex = -1;
+  sheetIndex = 0;
+  render();
+}
+function showHistory(){
+  ensureDayLocal();
+  const h = db[day].history || [];
+  if (!h.length){ setStatus("History khali — pehle Complete karein"); return; }
+  window._histView = true;
+  window._histIndex = h.length - 1;
+  sheetIndex = 0;
+  render();
+}
+function completeSlot(){
+  ensureDayLocal();
+  if (!isAfter7pm()){
+    setStatus("Complete 7:00 PM ke baad available hai");
+    return;
+  }
+  const total = (db[day].sheets||[]).reduce((a,s)=>a+sheetTotal(s),0);
+  if (!total){ setStatus("Complete ke liye orders nahi"); return; }
+  if (!confirm("Current slot complete?\nOrders History me chale jayenge, sheet khali ho jayegi.\n7PM ke baad naye orders alag banenge.")) return;
+  const batch = {
+    completedAt: Date.now(),
+    label: db[day].slotLabel || "2nd Orders",
+    timeLabel: new Date().toLocaleString(),
+    sheets: JSON.parse(JSON.stringify(db[day].sheets))
+  };
+  db[day].history = db[day].history || [];
+  db[day].history.push(batch);
+  db[day].sheets = [ emptySheet() ];
+  db[day].slotLabel = "Night Orders";
+  sheetIndex = 0;
+  window._histView = false;
+  saveDb();
+  render();
+  setStatus("Slot complete → History. Ab naye orders Night slot me.");
 }
 function ensureDay(){ ensureDayLocal(); saveDbLocal(); }
 function saveDb(){
@@ -312,7 +366,7 @@ function saveDb(){
 }
 async function saveDayOnline(){
   try {
-    const payload = { sheets: db[day].sheets, updatedAt: Date.now() };
+    const payload = { sheets: db[day].sheets, history: db[day].history||[], slotLabel: db[day].slotLabel||"2nd Orders", updatedAt: Date.now() };
     await fetch(DB + "/orderdesk_days/" + encodeURIComponent(day) + ".json", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
@@ -327,7 +381,11 @@ async function loadDayOnline(){
     if (r.ok) {
       const j = await r.json();
       if (j && Array.isArray(j.sheets) && j.sheets.length) {
-        db[day] = { sheets: j.sheets };
+        db[day] = {
+          sheets: j.sheets,
+          history: Array.isArray(j.history) ? j.history : (db[day]&&db[day].history)||[],
+          slotLabel: j.slotLabel || (db[day]&&db[day].slotLabel) || "2nd Orders"
+        };
         sheetIndex = 0;
         saveDbLocal();
         setStatus("Online data loaded · " + day);
@@ -340,10 +398,10 @@ async function loadDayOnline(){
   setStatus("Local / empty · " + day);
   render();
 }
-function curSheet(){ ensureDayLocal(); return db[day].sheets[sheetIndex]; }
 function sheetTotal(s){ return (s.sweets||[]).length + (s.fc||[]).length + (s.other||[]).length; }
 
 function newSheet(){
+  if (viewingHistory()){ setStatus("History me sheet nahi banti — Current slot pe jayein"); return; }
   ensureDayLocal();
   db[day].sheets.push(emptySheet());
   sheetIndex = db[day].sheets.length-1;
@@ -352,7 +410,7 @@ function newSheet(){
 }
 function clearDay(){
   if (!confirm("Is din ki sari sheets clear?")) return;
-  db[day] = { sheets:[ emptySheet() ] }; sheetIndex = 0; saveDb(); render();
+  db[day] = { sheets:[ emptySheet() ], history:[], slotLabel:"2nd Orders" }; sheetIndex = 0; window._histView=false; saveDb(); render();
 }
 
 async function fetchApiKey(){
@@ -486,27 +544,81 @@ function buildSheetHtml(s, idx, totalSheets, mode){
   </div>`;
 }
 
+function activeSheets(){
+  ensureDayLocal();
+  if (viewingHistory()){
+    const h = db[day].history || [];
+    const idx = Math.max(0, Math.min(window._histIndex||0, h.length-1));
+    return (h[idx] && h[idx].sheets) ? h[idx].sheets : [emptySheet()];
+  }
+  return db[day].sheets;
+}
+function curSheet(){
+  const sheets = activeSheets();
+  if (sheetIndex >= sheets.length) sheetIndex = Math.max(0, sheets.length-1);
+  return sheets[sheetIndex] || emptySheet();
+}
 function render(){
   ensureDay();
-  const sheets = db[day].sheets;
+  const sheets = activeSheets();
   const max = maxPerSheet();
   $("dayLabel").textContent = "Date: " + day;
   $("todayChip").textContent = day === todayStr() ? "Today" : day;
   $("sheetCount").textContent = sheets.length + " sheet" + (sheets.length>1?"s":"");
   let total = 0; sheets.forEach(s => total += sheetTotal(s));
-  $("ticketCount").textContent = sheetTotal(curSheet()) + " / " + max + " · day " + total;
-  const tabs = $("sheetTabs"); tabs.innerHTML = "";
-  sheets.forEach((_,i)=>{
-    const b = document.createElement("button");
-    b.className = "secondary sm" + (i===sheetIndex?" active":"");
-    b.textContent = "Sheet " + (i+1);
-    b.onclick = () => { sheetIndex=i; render(); };
-    tabs.appendChild(b);
-  });
+  $("ticketCount").textContent = sheetTotal(curSheet()) + " / " + max + " · " + total + " total";
+
+  const chip = $("slotChip");
+  const hint = $("slotHint");
+  const btnC = $("btnComplete");
+  if (viewingHistory()){
+    const h = db[day].history || [];
+    const idx = Math.max(0, Math.min(window._histIndex||0, h.length-1));
+    const batch = h[idx];
+    chip.textContent = "History · " + (batch && batch.label ? batch.label : "");
+    chip.style.background = "#3b1d1d"; chip.style.color = "#fca5a5";
+    hint.textContent = batch ? ("Completed: " + (batch.timeLabel||"")) : "";
+    if (btnC) btnC.style.display = "none";
+    // history batch tabs
+    const tabs = $("sheetTabs"); tabs.innerHTML = "";
+    h.forEach((batch,bi)=>{
+      const b = document.createElement("button");
+      b.className = "secondary sm" + (bi===idx?" active":"");
+      b.textContent = (batch.label||"Slot") + " #" + (bi+1);
+      b.onclick = () => { window._histIndex=bi; sheetIndex=0; render(); };
+      tabs.appendChild(b);
+    });
+    sheets.forEach((_,i)=>{
+      const b = document.createElement("button");
+      b.className = "secondary sm" + (i===sheetIndex?" active":"");
+      b.textContent = "Sheet " + (i+1);
+      b.onclick = () => { sheetIndex=i; render(); };
+      tabs.appendChild(b);
+    });
+  } else {
+    chip.textContent = db[day].slotLabel || "2nd Orders";
+    chip.style.background = "#1e3a5f"; chip.style.color = "#93c5fd";
+    if (isAfter7pm()){
+      if (btnC) btnC.style.display = "";
+      hint.textContent = "7PM+ · Complete se pehle wale History me jayenge";
+    } else {
+      if (btnC) btnC.style.display = "none";
+      hint.textContent = "Subah/shaam 7PM se pehle = 2nd Orders. 7PM baad Complete.";
+    }
+    const tabs = $("sheetTabs"); tabs.innerHTML = "";
+    sheets.forEach((_,i)=>{
+      const b = document.createElement("button");
+      b.className = "secondary sm" + (i===sheetIndex?" active":"");
+      b.textContent = "Sheet " + (i+1);
+      b.onclick = () => { sheetIndex=i; render(); };
+      tabs.appendChild(b);
+    });
+  }
   $("printArea").innerHTML = buildSheetHtml(curSheet(), sheetIndex, sheets.length);
 }
 
 function openEdit(side,i){
+  if (viewingHistory()){ setStatus("History read-only"); return; }
   editRef = { side, i };
   const o = curSheet()[side][i];
   $("eShop").value = o.shopName||"";
@@ -534,6 +646,7 @@ function deleteTicket(){
 }
 
 function placeOrder(item, side){
+  if (viewingHistory()){ setStatus("History read-only — Current slot pe switch karein"); return; }
   ensureDay();
   const max = maxPerSheet();
   if (!["sweets","fc","other"].includes(side)) side = "other";
@@ -645,7 +758,7 @@ function printCurrent(){ window.print(); }
 function printMode(mode){
   ensureDayLocal();
   const area = $("printArea");
-  const all = db[day].sheets || [];
+  const all = activeSheets() || [];
   const filtered = [];
   all.forEach(s => {
     const f = filterSheet(s, mode);
