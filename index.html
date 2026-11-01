@@ -143,6 +143,20 @@
     border-radius:999px; background:#ecfdf5; color:#065f46;
     font-weight:800; font-size:.64rem; letter-spacing:.04em;
   }
+  .null-block {
+    position:relative; z-index:2; margin-top:8px; flex-shrink:0;
+    border:1.5px solid #b91c1c; background:#fef2f2; padding:5px 8px;
+    font-size:.72rem;
+  }
+  .null-block h4 {
+    margin:0 0 3px; font-size:.78rem; letter-spacing:.06em; text-align:center;
+    color:#991b1b; font-weight:900;
+  }
+  .null-block .null-name {
+    font-weight:700; color:#7f1d1d; padding:1px 0;
+    border-bottom:1px dashed #fca5a5;
+  }
+  .null-block .null-name:last-child { border-bottom:0; }
   .sheet-summary {
     position:relative; z-index:2; margin-top:auto; flex-shrink:0;
     border-top:1.5px solid #111; background:#f8fafc; padding:6px 10px;
@@ -184,7 +198,21 @@
     .sheet:last-child { page-break-after:auto; break-after:auto; }
     .ticket { flex:0 0 auto; }
     .list { flex:0 1 auto; }
-    .sheet-summary { margin-top:12px; }
+    .null-block {
+    position:relative; z-index:2; margin-top:8px; flex-shrink:0;
+    border:1.5px solid #b91c1c; background:#fef2f2; padding:5px 8px;
+    font-size:.72rem;
+  }
+  .null-block h4 {
+    margin:0 0 3px; font-size:.78rem; letter-spacing:.06em; text-align:center;
+    color:#991b1b; font-weight:900;
+  }
+  .null-block .null-name {
+    font-weight:700; color:#7f1d1d; padding:1px 0;
+    border-bottom:1px dashed #fca5a5;
+  }
+  .null-block .null-name:last-child { border-bottom:0; }
+  .sheet-summary { margin-top:12px; }
     .ticket { cursor:default; break-inside:avoid; }
     .ticket:hover { box-shadow:none; }
   }
@@ -217,6 +245,9 @@
       <button class="secondary" style="flex:1" onclick="addManual('fc')">+ F.C.</button>
       <button class="secondary" style="flex:1" onclick="addManual('other')">+ Other</button>
     </div>
+    <label>NULL SHOPS (demand nahi aayi)</label>
+    <textarea id="nullShops" placeholder="Har line pe shop name&#10;New Niazi Ada&#10;Bhaati Gate" style="min-height:70px"></textarea>
+    <button class="secondary" onclick="saveNullShops()">Save Null list</button>
     <button class="secondary" onclick="newSheet()">+ New sheet</button>
     <button class="red" onclick="clearDay()">Is din clear</button>
     <div class="status" id="status"></div>
@@ -302,9 +333,10 @@ function saveDbLocal(){ localStorage.setItem(LS_KEY, JSON.stringify(db)); }
 function emptySheet(){ return { sweets:[], fc:[], other:[] }; }
 
 function ensureDayLocal(){
-  if (!db[day]) db[day] = { sheets:[ emptySheet() ], history:[], slotLabel:"2nd Orders" };
+  if (!db[day]) db[day] = { sheets:[ emptySheet() ], history:[], slotLabel:"2nd Orders", nullShops:[] };
   if (!db[day].history) db[day].history = [];
   if (!db[day].slotLabel) db[day].slotLabel = "2nd Orders";
+  if (!Array.isArray(db[day].nullShops)) db[day].nullShops = [];
   if (!db[day].sheets || !db[day].sheets.length) db[day].sheets = [ emptySheet() ];
   db[day].sheets.forEach(s => {
     if (!s.sweets) s.sweets = [];
@@ -346,11 +378,13 @@ function completeSlot(){
     completedAt: Date.now(),
     label: db[day].slotLabel || "2nd Orders",
     timeLabel: new Date().toLocaleString(),
-    sheets: JSON.parse(JSON.stringify(db[day].sheets))
+    sheets: JSON.parse(JSON.stringify(db[day].sheets)),
+    nullShops: JSON.parse(JSON.stringify(db[day].nullShops||[]))
   };
   db[day].history = db[day].history || [];
   db[day].history.push(batch);
   db[day].sheets = [ emptySheet() ];
+  db[day].nullShops = [];
   db[day].slotLabel = "Night Orders";
   sheetIndex = 0;
   window._histView = false;
@@ -366,7 +400,7 @@ function saveDb(){
 }
 async function saveDayOnline(){
   try {
-    const payload = { sheets: db[day].sheets, history: db[day].history||[], slotLabel: db[day].slotLabel||"2nd Orders", updatedAt: Date.now() };
+    const payload = { sheets: db[day].sheets, history: db[day].history||[], slotLabel: db[day].slotLabel||"2nd Orders", nullShops: db[day].nullShops||[], updatedAt: Date.now() };
     await fetch(DB + "/orderdesk_days/" + encodeURIComponent(day) + ".json", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
@@ -384,7 +418,8 @@ async function loadDayOnline(){
         db[day] = {
           sheets: j.sheets,
           history: Array.isArray(j.history) ? j.history : (db[day]&&db[day].history)||[],
-          slotLabel: j.slotLabel || (db[day]&&db[day].slotLabel) || "2nd Orders"
+          slotLabel: j.slotLabel || (db[day]&&db[day].slotLabel) || "2nd Orders",
+          nullShops: Array.isArray(j.nullShops) ? j.nullShops : (db[day]&&db[day].nullShops)||[]
         };
         sheetIndex = 0;
         saveDbLocal();
@@ -410,7 +445,7 @@ function newSheet(){
 }
 function clearDay(){
   if (!confirm("Is din ki sari sheets clear?")) return;
-  db[day] = { sheets:[ emptySheet() ], history:[], slotLabel:"2nd Orders" }; sheetIndex = 0; window._histView=false; saveDb(); render();
+  db[day] = { sheets:[ emptySheet() ], history:[], slotLabel:"2nd Orders", nullShops:[] }; sheetIndex = 0; window._histView=false; saveDb(); render();
 }
 
 async function fetchApiKey(){
@@ -476,6 +511,37 @@ function shopSummary(s){
   return map;
 }
 
+
+function getNullShops(){
+  ensureDayLocal();
+  if (viewingHistory()){
+    const h = db[day].history || [];
+    const idx = Math.max(0, Math.min(window._histIndex||0, h.length-1));
+    const batch = h[idx];
+    return ((batch && batch.nullShops) || []).map(s => String(s).trim()).filter(Boolean);
+  }
+  return (db[day].nullShops || []).map(s => String(s).trim()).filter(Boolean);
+}
+function saveNullShops(){
+  if (viewingHistory()){ setStatus("History read-only"); return; }
+  ensureDayLocal();
+  const raw = ($("nullShops") && $("nullShops").value) || "";
+  db[day].nullShops = raw.split(/\n|,/).map(s => s.trim()).filter(Boolean);
+  saveDb();
+  render();
+  setStatus("Null shops: " + db[day].nullShops.length);
+}
+function nullShopsHtml(){
+  const list = getNullShops();
+  if (!list.length) return "";
+  // Only show when sheet has empty-ish space OR always on last content — user: empty jagah ho to highlight
+  // Always show if list non-empty (compact); print uses same
+  return `<div class="null-block">
+    <h4>NULL</h4>
+    ${list.map(n => `<div class="null-name">${esc(n)}</div>`).join("")}
+  </div>`;
+}
+
 function summaryHtml(s){
   const map = shopSummary(s);
   const keys = Object.keys(map);
@@ -522,8 +588,9 @@ function buildSheetHtml(s, idx, totalSheets, mode){
   const shopLine = shops
     ? `<div class="sheet-shop">${esc(shops)}</div>`
     : "";
-  /* Summary only when empty space / at least 1 order — sits under tickets */
+  /* Summary + Null shops when sheet has room / orders */
   const sum = (sheetTotal(f) > 0) ? summaryHtml(f) : "";
+  const nullBlock = nullShopsHtml();
   const modeTag = (!mode || mode === "all") ? "" : " · " + String(mode).toUpperCase();
   const now = new Date();
   const stamp = day + " · " + now.toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"});
@@ -535,6 +602,7 @@ function buildSheetHtml(s, idx, totalSheets, mode){
     </div>
     ${shopLine}
     ${body}
+    ${nullBlock}
     ${sum}
     <div class="sheet-foot">
       <div class="foot-brand">HAFIZ SWEETS LAL KHOOH</div>
@@ -614,6 +682,9 @@ function render(){
       tabs.appendChild(b);
     });
   }
+  if ($("nullShops") && !viewingHistory()) {
+    $("nullShops").value = (db[day].nullShops || []).join("\n");
+  }
   $("printArea").innerHTML = buildSheetHtml(curSheet(), sheetIndex, sheets.length);
 }
 
@@ -681,8 +752,12 @@ function addManual(side){
 const SYSTEM = `You are bakery order desk AI for Pakistan (Hafiz-style order slips).
 User text may be Roman Urdu, Urdu, or English. Understand meaning.
 
+Also detect shops with NO demand / null / nill / demand nahi (if user lists them).
+Put those names in nullShops array (English shop names).
+
 Return ONLY JSON:
 {
+  "nullShops": ["Shop A", "Shop B"],
   "orders": [
     {
       "side": "fc" | "sweets" | "other",
@@ -734,6 +809,15 @@ async function aiAdd(){
       .replace(/^```json/i,"").replace(/^```/,"").replace(/```$/,"").trim();
     const parsed = JSON.parse(text);
     const list = Array.isArray(parsed.orders) ? parsed.orders : [];
+    if (Array.isArray(parsed.nullShops) && parsed.nullShops.length) {
+      ensureDayLocal();
+      const set = new Set(db[day].nullShops || []);
+      parsed.nullShops.forEach(n => {
+        const x = String(n||"").trim();
+        if (x) set.add(x);
+      });
+      db[day].nullShops = Array.from(set);
+    }
     list.forEach(o => {
       let side = (o.side||"").toLowerCase();
       if (side !== "fc" && side !== "sweets" && side !== "other") {
@@ -745,7 +829,7 @@ async function aiAdd(){
     });
     $("raw").value = "";
     render();
-    setStatus("Added");
+    setStatus("Added" + (parsed.nullShops&&parsed.nullShops.length ? " · null shops updated" : ""));
   } catch(e) {
     cachedKey = "";
     setStatus("Error: " + (e.message||e));
