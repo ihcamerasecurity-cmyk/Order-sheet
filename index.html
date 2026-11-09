@@ -50,8 +50,10 @@
   .sheet-wrap { display:flex; justify-content:center; }
   .sheet {
     width:100%; max-width:1120px; min-height:min(70vh, 520px);
-    background:var(--paper); color:var(--ink); border-radius:3px;
-    box-shadow:0 10px 32px rgba(0,0,0,.45);
+    background:linear-gradient(180deg,#fffefb 0%,#f8fafc 100%);
+    color:var(--ink); border-radius:4px;
+    border:1px solid #cbd5e1;
+    box-shadow:0 12px 36px rgba(0,0,0,.4);
     display:flex; flex-direction:column; position:relative; overflow:hidden;
   }
   .sheet::before {
@@ -86,38 +88,55 @@
   .col { padding:4px 5px; border-right:1.5px solid #222; display:flex; flex-direction:column; gap:2px; min-height:0; justify-content:flex-start; align-content:flex-start; }
   .col:last-child { border-right:0; }
   .col-title {
-    text-align:center; font-weight:900; font-size:.75rem; letter-spacing:.04em;
-    padding:3px 4px; border:1.5px solid #111; background:#f3f4f6; flex-shrink:0;
+    text-align:center; font-weight:900; font-size:.78rem; letter-spacing:.08em;
+    padding:4px 4px; border:1.5px solid #0f172a; background:#f1f5f9; flex-shrink:0;
+    text-transform:uppercase; color:#0f172a;
   }
-  .col.sweets .col-title { background:#ecfdf5; }
-  .col.fc .col-title { background:#fff7ed; }
-  .col.other .col-title { background:#eff6ff; }
+  .col.sweets .col-title { background:#d1fae5; }
+  .col.fc .col-title { background:#ffedd5; }
+  .col.other .col-title { background:#dbeafe; }
   .list {
-    display:flex; flex-direction:column; gap:3px;
+    display:flex; flex-direction:column; gap:4px;
     flex:0 1 auto; align-content:flex-start; align-items:stretch;
-    max-width:520px; /* full landscape width pe fail nahi */
+    max-width:540px;
   }
   .ticket {
-    border:1.5px solid #111; padding:4px 6px; background:#fff; cursor:pointer;
-    font-size:.7rem; line-height:1.25;
-    flex:0 0 auto; width:100%; max-width:520px;
-    margin:0;
+    border:1.5px solid #1e293b; border-radius:2px;
+    padding:5px 7px 6px; background:#fff; cursor:pointer;
+    font-size:.72rem; line-height:1.35;
+    flex:0 0 auto; width:100%; max-width:540px;
+    margin:0; box-shadow:0 1px 0 rgba(15,23,42,.04);
   }
   .ticket:hover { box-shadow:inset 0 0 0 1.5px #0B8457; }
   .ticket .t-head {
-    display:flex; justify-content:space-between; align-items:baseline;
-    gap:8px; border-bottom:1px solid #333; padding-bottom:2px; margin-bottom:2px;
+    display:grid; grid-template-columns:auto 1fr auto;
+    align-items:center; gap:6px;
+    border-bottom:1.5px solid #0f172a; padding-bottom:3px; margin-bottom:3px;
     font-weight:800; font-size:.72rem;
   }
-  .ticket .t-line { margin:0; padding:0; line-height:1.3; }
-  .ticket .t-line b { font-weight:800; margin-right:4px; }
-  .nums { font-variant-numeric:tabular-nums; font-weight:800; direction:ltr; unicode-bidi:embed; }
-  .shop-en { font-weight:800; }
+  .ticket .t-no { font-weight:900; color:#0f172a; white-space:nowrap; }
+  .ticket .t-shop {
+    text-align:center; font-weight:900; font-size:.88rem;
+    color:#0f172a; letter-spacing:.02em;
+    overflow-wrap:anywhere; word-break:break-word; white-space:normal;
+    line-height:1.2;
+  }
+  .ticket .t-qty { font-weight:900; white-space:nowrap; text-align:right; }
+  .ticket .t-line {
+    margin:1px 0; padding:0; line-height:1.35;
+    overflow-wrap:anywhere; word-break:break-word; white-space:normal;
+  }
+  .ticket .t-line b { font-weight:800; margin-right:4px; color:#334155; }
+  .nums { font-variant-numeric:tabular-nums; font-weight:900; direction:ltr; unicode-bidi:embed; }
+  .shop-en { font-weight:900; }
   .detail {
-    margin-top:2px; font-size:.68rem; line-height:1.3; white-space:pre-wrap;
+    margin-top:3px; font-size:.78rem; line-height:1.4; white-space:pre-wrap;
+    font-weight:650;
     direction:rtl; text-align:right;
     font-family:"Noto Nastaliq Urdu","Segoe UI",Tahoma,sans-serif;
-    border-top:1px dashed #999; padding-top:2px;
+    border-top:1px dashed #94a3b8; padding-top:3px;
+    color:#0f172a;
+    overflow-wrap:anywhere; word-break:break-word;
   }
   .sheet-foot {
     position:relative; z-index:2; text-align:center;
@@ -289,7 +308,7 @@
   <div class="modal">
     <h3>Edit ticket</h3>
     <label>Shop (English)</label><input id="eShop"/>
-    <label>Name</label><input id="eName"/>
+    <label>Name (customer / on cake)</label><input id="eName"/>
     <label>Qty</label><input id="eQty"/>
     <label>Flavour</label><input id="eFlavour"/>
     <label>Tafseel / Note</label><textarea id="eDetail" style="min-height:90px"></textarea>
@@ -460,19 +479,23 @@ async function fetchApiKey(){
 }
 
 function ticketHtml(o, i, side){
-  const prefix = side==="fc" ? "F.C. " : side==="other" ? "O " : "S ";
+  const prefix = side==="fc" ? "F.C." : side==="other" ? "O" : "S";
   let nameVal = "";
   if (o.nameOnCakeEn || o.nameOnCakeUr) {
     nameVal = [o.nameOnCakeEn, o.nameOnCakeUr].filter(Boolean).join(" / ");
   } else {
     nameVal = o.customerName || "—";
   }
+  const shop = (o.shopName || "—").trim() || "—";
   const flav = o.flavour ? `<div class="t-line"><b>Flav.</b> ${esc(o.flavour)}</div>` : "";
   const rate = o.rateNote ? `<div class="t-line"><b>Rate.</b> ${esc(o.rateNote)}</div>` : "";
   const det = (o.detailUrdu||"").trim();
   return `<div class="ticket" onclick="openEdit('${side}',${i})">
-    <div class="t-head"><span>${esc(prefix+(i+1))}</span><span class="nums">${esc(o.qty||"")}</span></div>
-    <div class="t-line"><b>Shop.</b> <span class="shop-en">${esc(o.shopName||"—")}</span></div>
+    <div class="t-head">
+      <span class="t-no">${esc(prefix+" "+(i+1))}</span>
+      <span class="t-shop">${esc(shop)}</span>
+      <span class="t-qty nums">${esc(o.qty||"")}</span>
+    </div>
     <div class="t-line"><b>Name.</b> ${esc(nameVal)}</div>
     ${flav}
     ${rate}
@@ -584,11 +607,6 @@ function buildSheetHtml(s, idx, totalSheets, mode){
   const body = n
     ? `<div class="cols ${colsClass}">${parts.join("")}</div>`
     : `<div class="empty-sheet">No orders on this sheet</div>`;
-  const shops = primaryShops(f);
-  const shopLine = shops
-    ? `<div class="sheet-shop">${esc(shops)}</div>`
-    : "";
-  /* Summary + Null shops when sheet has room / orders */
   const sum = (sheetTotal(f) > 0) ? summaryHtml(f) : "";
   const nullBlock = nullShopsHtml();
   const modeTag = (!mode || mode === "all") ? "" : " · " + String(mode).toUpperCase();
@@ -600,7 +618,6 @@ function buildSheetHtml(s, idx, totalSheets, mode){
       <span class="h-center">${esc(day)}</span>
       <span class="h-right"></span>
     </div>
-    ${shopLine}
     ${body}
     ${nullBlock}
     ${sum}
@@ -693,7 +710,7 @@ function openEdit(side,i){
   editRef = { side, i };
   const o = curSheet()[side][i];
   $("eShop").value = o.shopName||"";
-  $("eName").value = o.customerName||"";
+  $("eName").value = (o.nameOnCakeEn || o.nameOnCakeUr || o.customerName || "");
   $("eQty").value = o.qty||"";
   $("eFlavour").value = o.flavour||"";
   $("eDetail").value = o.detailUrdu||"";
