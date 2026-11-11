@@ -201,10 +201,48 @@
   .modal h3 { margin:0 0 6px; }
   .modal .row { display:flex; gap:8px; margin-top:10px; }
   .modal .row button { flex:1; }
+
+  .pending-banner {
+    position:relative; z-index:3;
+    margin:8px 0; padding:10px 12px;
+    background:linear-gradient(90deg,#fef3c7,#ffedd5);
+    border:1.5px solid #d97706; border-radius:10px;
+    color:#78350f; font-weight:700; font-size:.85rem;
+    display:flex; flex-wrap:wrap; gap:8px; align-items:center; justify-content:space-between;
+  }
+  .pending-banner button { width:auto; margin:0; padding:8px 12px; background:#b45309; }
+  .special-note-box {
+    position:relative; z-index:2; margin:8px 10px; flex-shrink:0;
+    border:2px solid #0B8457; border-radius:8px;
+    background:linear-gradient(135deg,#ecfdf5 0%,#f0fdf4 50%,#fff 100%);
+    padding:8px 12px; box-shadow:inset 0 0 0 1px rgba(11,132,87,.15);
+  }
+  .special-note-box h4 {
+    margin:0 0 4px; text-align:center; font-size:.8rem; letter-spacing:.08em;
+    color:#065f46; font-weight:900; text-transform:uppercase;
+  }
+  .special-note-box .sn-body {
+    direction:rtl; text-align:right; font-size:.85rem; line-height:1.45; font-weight:650;
+    color:#0f172a; white-space:pre-wrap;
+    font-family:"Noto Nastaliq Urdu","Segoe UI",Tahoma,sans-serif;
+    min-height:1.2em;
+  }
+  .ticket .t-when {
+    margin-top:3px; padding-top:3px; border-top:1.5px solid #0f172a;
+    text-align:right; font-weight:900; font-size:.68rem;
+    color:#0f172a; letter-spacing:.02em;
+  }
+  .audit-list { max-height:280px; overflow:auto; font-size:.78rem; }
+  .audit-row {
+    border:1px solid var(--line); border-radius:8px; padding:8px; margin-bottom:6px;
+    background:#0f1726;
+  }
+  .audit-row b { color:#4ade80; }
+
   @page { size: A4 landscape; margin: 6mm; }
   @media print {
     body { background:#fff; }
-    header,.sidebar,.toolbar,.day-bar,.sheet-tabs,.status,.modal-bg { display:none !important; }
+    header,.sidebar,.toolbar,.day-bar,.sheet-tabs,.status,.modal-bg,.pending-banner,#slotBar { display:none !important; }
     .layout { display:block; height:auto; }
     .main { padding:0; background:#fff; overflow:visible; }
     .sheet-wrap { display:block; }
@@ -264,9 +302,10 @@
       <button class="secondary" style="flex:1" onclick="addManual('fc')">+ F.C.</button>
       <button class="secondary" style="flex:1" onclick="addManual('other')">+ Other</button>
     </div>
-    <label>NULL SHOPS (demand nahi aayi)</label>
-    <textarea id="nullShops" placeholder="Har line pe shop name&#10;New Niazi Ada&#10;Bhaati Gate" style="min-height:70px"></textarea>
-    <button class="secondary" onclick="saveNullShops()">Save Null list</button>
+    <label>SPECIAL NOTE (Urdu)</label>
+    <textarea id="specialNote" placeholder="خاص نوٹ یہاں اردو میں لکھیں…" style="min-height:80px;direction:rtl;text-align:right"></textarea>
+    <button class="secondary" onclick="saveSpecialNote()">Save Special Note</button>
+    <button class="secondary" onclick="showAuditLogs()">Edit / Delete Logs</button>
     <button class="secondary" onclick="newSheet()">+ New sheet</button>
     <button class="red" onclick="clearDay()">Is din clear</button>
     <div class="status" id="status"></div>
@@ -298,7 +337,8 @@
       <button class="secondary sm" onclick="printMode('other')">Print Other only</button>
       <button class="secondary sm" onclick="printMode('sweets')">Print Sweets only</button>
       <button class="secondary sm" onclick="printCurrent()">Print current sheet</button>
-      <button class="secondary sm" onclick="exportDay()">Export</button>
+      <button class="amber sm" onclick="exportPdf()">Export PDF</button>
+      <button class="secondary sm" onclick="exportDay()">Export JSON</button>
     </div>
     <div class="sheet-wrap" id="printArea"><div class="sheet" id="sheet"></div></div>
   </main>
@@ -321,7 +361,7 @@
 </div>
 
 <script>
-const LS_KEY = "orderdesk_v6";
+const LS_KEY = "orderdesk_v7";
 const DB = "https://website-create-ec499-default-rtdb.firebaseio.com";
 const CFG_URL = DB + "/orderdesk_config.json";
 const DEFAULT_MODEL = "openai/gpt-oss-120b";
@@ -352,10 +392,11 @@ function saveDbLocal(){ localStorage.setItem(LS_KEY, JSON.stringify(db)); }
 function emptySheet(){ return { sweets:[], fc:[], other:[] }; }
 
 function ensureDayLocal(){
-  if (!db[day]) db[day] = { sheets:[ emptySheet() ], history:[], slotLabel:"2nd Orders", nullShops:[] };
+  if (!db[day]) db[day] = { sheets:[ emptySheet() ], history:[], slotLabel:"2nd Orders", specialNote:"", auditLogs:[] };
   if (!db[day].history) db[day].history = [];
   if (!db[day].slotLabel) db[day].slotLabel = "2nd Orders";
-  if (!Array.isArray(db[day].nullShops)) db[day].nullShops = [];
+  if (typeof db[day].specialNote !== "string") db[day].specialNote = "";
+  if (!Array.isArray(db[day].auditLogs)) db[day].auditLogs = [];
   if (!db[day].sheets || !db[day].sheets.length) db[day].sheets = [ emptySheet() ];
   db[day].sheets.forEach(s => {
     if (!s.sweets) s.sweets = [];
@@ -363,6 +404,27 @@ function ensureDayLocal(){
     if (!s.other) s.other = [];
   });
   if (sheetIndex >= db[day].sheets.length) sheetIndex = Math.max(0, db[day].sheets.length-1);
+}
+function isFutureDay(d){
+  const t0 = todayStr();
+  return String(d || day) > t0;
+}
+function pushAudit(action, detail){
+  ensureDayLocal();
+  if (!db._globalAudit) db._globalAudit = [];
+  const row = {
+    id: "a_"+Date.now()+"_"+Math.random().toString(36).slice(2,7),
+    at: Date.now(),
+    day: day,
+    action: action,
+    detail: detail || ""
+  };
+  db._globalAudit.unshift(row);
+  if (db._globalAudit.length > 2000) db._globalAudit.length = 2000;
+  // also day-scoped copy (read-only list)
+  db[day].auditLogs = db[day].auditLogs || [];
+  db[day].auditLogs.unshift(row);
+  saveDbLocal();
 }
 function isAfter7pm(){
   const n = new Date();
@@ -398,13 +460,14 @@ function completeSlot(){
     label: db[day].slotLabel || "2nd Orders",
     timeLabel: new Date().toLocaleString(),
     sheets: JSON.parse(JSON.stringify(db[day].sheets)),
-    nullShops: JSON.parse(JSON.stringify(db[day].nullShops||[]))
+    specialNote: db[day].specialNote || ""
   };
   db[day].history = db[day].history || [];
   db[day].history.push(batch);
   db[day].sheets = [ emptySheet() ];
-  db[day].nullShops = [];
+  db[day].specialNote = "";
   db[day].slotLabel = "Night Orders";
+  pushAudit("COMPLETE_SLOT", batch.label + " · " + batch.timeLabel);
   sheetIndex = 0;
   window._histView = false;
   saveDb();
@@ -419,7 +482,7 @@ function saveDb(){
 }
 async function saveDayOnline(){
   try {
-    const payload = { sheets: db[day].sheets, history: db[day].history||[], slotLabel: db[day].slotLabel||"2nd Orders", nullShops: db[day].nullShops||[], updatedAt: Date.now() };
+    const payload = { sheets: db[day].sheets, history: db[day].history||[], slotLabel: db[day].slotLabel||"2nd Orders", specialNote: db[day].specialNote||"", auditLogs: db[day].auditLogs||[], updatedAt: Date.now() };
     await fetch(DB + "/orderdesk_days/" + encodeURIComponent(day) + ".json", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
@@ -429,27 +492,47 @@ async function saveDayOnline(){
 }
 async function loadDayOnline(){
   setStatus("Loading…");
+  const selected = day;
+  window._histView = false;
   try {
-    const r = await fetch(DB + "/orderdesk_days/" + encodeURIComponent(day) + ".json?t=" + Date.now());
+    const r = await fetch(DB + "/orderdesk_days/" + encodeURIComponent(selected) + ".json?t=" + Date.now());
     if (r.ok) {
       const j = await r.json();
-      if (j && Array.isArray(j.sheets) && j.sheets.length) {
-        db[day] = {
-          sheets: j.sheets,
-          history: Array.isArray(j.history) ? j.history : (db[day]&&db[day].history)||[],
-          slotLabel: j.slotLabel || (db[day]&&db[day].slotLabel) || "2nd Orders",
-          nullShops: Array.isArray(j.nullShops) ? j.nullShops : (db[day]&&db[day].nullShops)||[]
+      // null / missing online = empty day (do NOT keep other date data)
+      if (!j) {
+        db[selected] = { sheets:[ emptySheet() ], history:[], slotLabel:"2nd Orders", specialNote:"", auditLogs:[] };
+        sheetIndex = 0;
+        saveDbLocal();
+        setStatus("Empty · " + selected);
+        render();
+        return;
+      }
+      if (Array.isArray(j.sheets)) {
+        const sheets = j.sheets.length ? j.sheets : [ emptySheet() ];
+        db[selected] = {
+          sheets: sheets,
+          history: Array.isArray(j.history) ? j.history : [],
+          slotLabel: j.slotLabel || "2nd Orders",
+          specialNote: typeof j.specialNote === "string" ? j.specialNote : "",
+          auditLogs: Array.isArray(j.auditLogs) ? j.auditLogs : []
         };
         sheetIndex = 0;
         saveDbLocal();
-        setStatus("Online data loaded · " + day);
+        const tot = sheets.reduce((a,s)=>a+sheetTotal(s),0);
+        setStatus((tot ? "Loaded · " : "Empty · ") + selected);
         render();
         return;
       }
     }
   } catch(e) { console.warn(e); }
-  ensureDayLocal();
-  setStatus("Local / empty · " + day);
+  // local only — if no key, empty sheet for THIS date only
+  if (!db[selected]) {
+    db[selected] = { sheets:[ emptySheet() ], history:[], slotLabel:"2nd Orders", specialNote:"", auditLogs:[] };
+  } else {
+    ensureDayLocal();
+  }
+  sheetIndex = 0;
+  setStatus("Local · " + selected);
   render();
 }
 function sheetTotal(s){ return (s.sweets||[]).length + (s.fc||[]).length + (s.other||[]).length; }
@@ -464,7 +547,7 @@ function newSheet(){
 }
 function clearDay(){
   if (!confirm("Is din ki sari sheets clear?")) return;
-  db[day] = { sheets:[ emptySheet() ], history:[], slotLabel:"2nd Orders", nullShops:[] }; sheetIndex = 0; window._histView=false; saveDb(); render();
+  db[day] = { sheets:[ emptySheet() ], history:[], slotLabel:"2nd Orders", specialNote:"", auditLogs: db[day]&&db[day].auditLogs ? db[day].auditLogs : [] }; sheetIndex = 0; window._histView=false; pushAudit("CLEAR_DAY", day); saveDb(); render();
 }
 
 async function fetchApiKey(){
@@ -478,6 +561,15 @@ async function fetchApiKey(){
   return cachedKey;
 }
 
+function formatWhen(ts){
+  if (!ts) return "";
+  try {
+    const d = new Date(ts);
+    const ds = d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+    const tm = d.toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"});
+    return ds + " · " + tm;
+  } catch(e){ return ""; }
+}
 function ticketHtml(o, i, side){
   const prefix = side==="fc" ? "F.C." : side==="other" ? "O" : "S";
   let nameVal = "";
@@ -490,6 +582,7 @@ function ticketHtml(o, i, side){
   const flav = o.flavour ? `<div class="t-line"><b>Flav.</b> ${esc(o.flavour)}</div>` : "";
   const rate = o.rateNote ? `<div class="t-line"><b>Rate.</b> ${esc(o.rateNote)}</div>` : "";
   const det = (o.detailUrdu||"").trim();
+  const when = formatWhen(o.createdAt || o.updatedAt);
   return `<div class="ticket" onclick="openEdit('${side}',${i})">
     <div class="t-head">
       <span class="t-no">${esc(prefix+" "+(i+1))}</span>
@@ -500,6 +593,7 @@ function ticketHtml(o, i, side){
     ${flav}
     ${rate}
     ${det ? `<div class="detail">${esc(det)}</div>` : ""}
+    ${when ? `<div class="t-when">${esc(when)}</div>` : ""}
   </div>`;
 }
 function colHtml(title, side, list, cls){
@@ -535,34 +629,55 @@ function shopSummary(s){
 }
 
 
-function getNullShops(){
+function getSpecialNote(){
   ensureDayLocal();
   if (viewingHistory()){
     const h = db[day].history || [];
     const idx = Math.max(0, Math.min(window._histIndex||0, h.length-1));
     const batch = h[idx];
-    return ((batch && batch.nullShops) || []).map(s => String(s).trim()).filter(Boolean);
+    return (batch && batch.specialNote) ? String(batch.specialNote) : "";
   }
-  return (db[day].nullShops || []).map(s => String(s).trim()).filter(Boolean);
+  return db[day].specialNote || "";
 }
-function saveNullShops(){
+function saveSpecialNote(){
   if (viewingHistory()){ setStatus("History read-only"); return; }
   ensureDayLocal();
-  const raw = ($("nullShops") && $("nullShops").value) || "";
-  db[day].nullShops = raw.split(/\n|,/).map(s => s.trim()).filter(Boolean);
+  db[day].specialNote = ($("specialNote") && $("specialNote").value) || "";
   saveDb();
   render();
-  setStatus("Null shops: " + db[day].nullShops.length);
+  setStatus("Special note saved");
 }
-function nullShopsHtml(){
-  const list = getNullShops();
-  if (!list.length) return "";
-  // Only show when sheet has empty-ish space OR always on last content — user: empty jagah ho to highlight
-  // Always show if list non-empty (compact); print uses same
-  return `<div class="null-block">
-    <h4>NULL</h4>
-    ${list.map(n => `<div class="null-name">${esc(n)}</div>`).join("")}
+function specialNoteHtml(){
+  const note = getSpecialNote().trim();
+  if (!note) return "";
+  return `<div class="special-note-box">
+    <h4>Special Note</h4>
+    <div class="sn-body">${esc(note)}</div>
   </div>`;
+}
+function showAuditLogs(){
+  const all = (db._globalAudit || []).slice(0, 300);
+  const dayLogs = ((db[day] && db[day].auditLogs) || []).slice(0, 200);
+  const list = all.length ? all : dayLogs;
+  let html = `<div class="audit-list">`;
+  if (!list.length) html += `<div style="color:#94a3b8">Abhi koi edit/delete log nahi.</div>`;
+  list.forEach(r => {
+    const when = formatWhen(r.at);
+    html += `<div class="audit-row"><b>${esc(r.action)}</b> · ${esc(r.day||"")}<br/>${esc(when)}<br/>${esc(r.detail||"")}</div>`;
+  });
+  html += `</div><p style="font-size:12px;color:#94a3b8;margin-top:8px">Logs permanent hain — delete nahi ho sakte.</p>`;
+  const wrap = document.createElement("div");
+  wrap.innerHTML = html;
+  const box = document.createElement("div");
+  box.className = "modal-bg show";
+  box.innerHTML = `<div class="modal" style="max-width:520px;max-height:80vh;overflow:auto"><h3>Edit / Delete Logs</h3></div>`;
+  box.querySelector(".modal").appendChild(wrap);
+  const close = document.createElement("button");
+  close.className = "secondary";
+  close.textContent = "Close";
+  close.onclick = () => box.remove();
+  box.querySelector(".modal").appendChild(close);
+  document.body.appendChild(box);
 }
 
 function summaryHtml(s){
@@ -608,7 +723,7 @@ function buildSheetHtml(s, idx, totalSheets, mode){
     ? `<div class="cols ${colsClass}">${parts.join("")}</div>`
     : `<div class="empty-sheet">No orders on this sheet</div>`;
   const sum = (sheetTotal(f) > 0) ? summaryHtml(f) : "";
-  const nullBlock = nullShopsHtml();
+  const noteBlock = specialNoteHtml();
   const modeTag = (!mode || mode === "all") ? "" : " · " + String(mode).toUpperCase();
   const now = new Date();
   const stamp = day + " · " + now.toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"});
@@ -619,7 +734,7 @@ function buildSheetHtml(s, idx, totalSheets, mode){
       <span class="h-right"></span>
     </div>
     ${body}
-    ${nullBlock}
+    ${noteBlock}
     ${sum}
     <div class="sheet-foot">
       <div class="foot-brand">HAFIZ SWEETS LAL KHOOH</div>
@@ -699,10 +814,17 @@ function render(){
       tabs.appendChild(b);
     });
   }
-  if ($("nullShops") && !viewingHistory()) {
-    $("nullShops").value = (db[day].nullShops || []).join("\n");
+  if ($("specialNote") && !viewingHistory()) {
+    $("specialNote").value = db[day].specialNote || "";
   }
-  $("printArea").innerHTML = buildSheetHtml(curSheet(), sheetIndex, sheets.length);
+  let pendingHtml = "";
+  if (isFutureDay(day) && !viewingHistory()) {
+    pendingHtml = `<div class="pending-banner">
+      <span>⏳ PENDING · Date ${esc(day)} — yeh orders abhi print me nahi aate</span>
+      <button type="button" onclick="alert('Yeh future date ke orders hain. Print tab hoga jab yeh date aa jaye / aaj select ho.')">Pending info</button>
+    </div>`;
+  }
+  $("printArea").innerHTML = pendingHtml + buildSheetHtml(curSheet(), sheetIndex, sheets.length);
 }
 
 function openEdit(side,i){
@@ -720,15 +842,21 @@ function closeModal(){ $("modal").classList.remove("show"); editRef=null; }
 function saveTicket(){
   if (!editRef) return;
   const o = curSheet()[editRef.side][editRef.i];
+  const before = JSON.stringify(o);
   o.shopName=$("eShop").value.trim();
   o.customerName=$("eName").value.trim();
+  o.nameOnCakeEn = o.customerName;
   o.qty=$("eQty").value.trim();
   o.flavour=$("eFlavour").value.trim();
   o.detailUrdu=$("eDetail").value.trim();
+  o.updatedAt = Date.now();
+  pushAudit("EDIT", (o.shopName||"") + " · " + (o.qty||"") + " · " + (o.detailUrdu||"").slice(0,80));
   saveDb(); closeModal(); render(); setStatus("Saved");
 }
 function deleteTicket(){
   if (!editRef || !confirm("Delete?")) return;
+  const o = curSheet()[editRef.side][editRef.i];
+  pushAudit("DELETE", (o.shopName||"") + " · " + (o.qty||"") + " · " + (o.detailUrdu||"").slice(0,80));
   curSheet()[editRef.side].splice(editRef.i,1);
   saveDb(); closeModal(); render();
 }
@@ -753,7 +881,8 @@ function normalize(o, type){
     flavour: o.flavour || "",
     rateNote: o.rateNote || "",
     detailUrdu: o.detailUrdu || "",
-    type: o.type || type
+    type: o.type || type,
+    createdAt: o.createdAt || Date.now()
   };
 }
 function addManual(side){
@@ -769,12 +898,8 @@ function addManual(side){
 const SYSTEM = `You are bakery order desk AI for Pakistan (Hafiz-style order slips).
 User text may be Roman Urdu, Urdu, or English. Understand meaning.
 
-Also detect shops with NO demand / null / nill / demand nahi (if user lists them).
-Put those names in nullShops array (English shop names).
-
 Return ONLY JSON:
 {
-  "nullShops": ["Shop A", "Shop B"],
   "orders": [
     {
       "side": "fc" | "sweets" | "other",
@@ -826,15 +951,6 @@ async function aiAdd(){
       .replace(/^```json/i,"").replace(/^```/,"").replace(/```$/,"").trim();
     const parsed = JSON.parse(text);
     const list = Array.isArray(parsed.orders) ? parsed.orders : [];
-    if (Array.isArray(parsed.nullShops) && parsed.nullShops.length) {
-      ensureDayLocal();
-      const set = new Set(db[day].nullShops || []);
-      parsed.nullShops.forEach(n => {
-        const x = String(n||"").trim();
-        if (x) set.add(x);
-      });
-      db[day].nullShops = Array.from(set);
-    }
     list.forEach(o => {
       let side = (o.side||"").toLowerCase();
       if (side !== "fc" && side !== "sweets" && side !== "other") {
@@ -846,18 +962,29 @@ async function aiAdd(){
     });
     $("raw").value = "";
     render();
-    setStatus("Added" + (parsed.nullShops&&parsed.nullShops.length ? " · null shops updated" : ""));
+    setStatus("Added");
   } catch(e) {
     cachedKey = "";
     setStatus("Error: " + (e.message||e));
   }
 }
 
-function printCurrent(){ window.print(); }
+function printCurrent(){
+  if (isFutureDay(day)) {
+    alert("Future pending orders print nahi.");
+    return;
+  }
+  window.print();
+}
 
 /** mode: all | fc | other | sweets — alag print ya ikhatta */
 function printMode(mode){
   ensureDayLocal();
+  if (isFutureDay(day)) {
+    setStatus("Future date ("+day+") print nahi — pending orders hain");
+    alert("Yeh date abhi future hai. Print sirf aaj / past date ke orders ka.");
+    return;
+  }
   const area = $("printArea");
   const all = activeSheets() || [];
   const filtered = [];
@@ -874,6 +1001,13 @@ function printMode(mode){
     window.print();
     render();
   }, 120);
+}
+function exportPdf(){
+  if (isFutureDay(day)) {
+    alert("Future pending orders PDF print nahi.");
+    return;
+  }
+  printMode("all");
 }
 
 function printDay(){ printMode("all"); }
