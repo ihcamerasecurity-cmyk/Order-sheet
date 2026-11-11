@@ -6,9 +6,10 @@
 <title>MrCrazy OrderDesk</title>
 <style>
   :root {
-    --bg:#0f1419; --panel:#1a2332; --line:#334155;
+    --bg:#0b1220; --panel:#111a2b; --line:#2a3a55;
     --text:#e8eef7; --muted:#94a3b8; --green:#0B8457;
-    --cream:#f59e0b; --paper:#fffef8; --ink:#111;
+    --cream:#f59e0b; --paper:#fffefb; --ink:#0f172a;
+    --accent:#38bdf8;
   }
   * { box-sizing:border-box; }
   body { margin:0; font-family:"Segoe UI",system-ui,sans-serif; background:var(--bg); color:var(--text); min-height:100vh; }
@@ -114,7 +115,7 @@
     border-bottom:1.5px solid #0f172a; padding-bottom:3px; margin-bottom:3px;
     font-weight:800; font-size:.72rem;
   }
-  .ticket .t-no { font-weight:900; color:#0f172a; white-space:nowrap; }
+  .ticket .t-no { font-weight:700; color:#64748b; white-space:nowrap; font-size:.62rem; }
   .ticket .t-shop {
     text-align:center; font-weight:900; font-size:.88rem;
     color:#0f172a; letter-spacing:.02em;
@@ -202,6 +203,47 @@
   .modal .row { display:flex; gap:8px; margin-top:10px; }
   .modal .row button { flex:1; }
 
+  .popup-bg {
+    display:none; position:fixed; inset:0; z-index:100;
+    background:rgba(2,6,23,.72); align-items:center; justify-content:center; padding:16px;
+  }
+  .popup-bg.show { display:flex; }
+  .popup {
+    background:#0f172a; border:1px solid #334155; border-radius:16px;
+    padding:18px 18px 14px; max-width:420px; width:100%;
+    box-shadow:0 24px 60px rgba(0,0,0,.55); color:var(--text); text-align:center;
+  }
+  .popup h3 { margin:0 0 8px; font-size:1.05rem; }
+  .popup p { margin:0 0 14px; color:var(--muted); font-size:.9rem; line-height:1.45; }
+  .popup .prow { display:flex; gap:8px; justify-content:center; }
+  .popup .prow button { width:auto; min-width:110px; margin:0; }
+  .menu-btn {
+    width:40px; height:40px; border-radius:12px; border:1px solid var(--line);
+    background:#1a2740; color:#fff; font-size:18px; font-weight:900; cursor:pointer;
+    display:flex; align-items:center; justify-content:center; padding:0; margin:0;
+  }
+  .drawer-bg {
+    display:none; position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:80;
+  }
+  .drawer-bg.show { display:block; }
+  .drawer {
+    position:fixed; top:0; right:-320px; width:300px; height:100%;
+    background:#0f172a; border-left:1px solid var(--line); z-index:90;
+    transition:right .25s ease; padding:16px 14px; overflow:auto;
+  }
+  .drawer.open { right:0; }
+  .drawer h3 { margin:0 0 12px; font-size:1rem; }
+  .drawer button { margin-top:8px; }
+  .qty-hl {
+    display:inline-block; background:#fef08a; color:#713f12;
+    font-weight:900; padding:1px 6px; border-radius:4px;
+    border:1px solid #eab308;
+  }
+  .t-delivery {
+    margin-top:2px; font-size:.72rem; font-weight:800; color:#9a3412;
+    background:#ffedd5; border:1px solid #fdba74; border-radius:4px;
+    padding:2px 6px; display:inline-block;
+  }
   .pending-banner {
     position:relative; z-index:3;
     margin:8px 0; padding:10px 12px;
@@ -241,6 +283,7 @@
 
   @page { size: A4 landscape; margin: 6mm; }
   @media print {
+    * { -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; }
     body { background:#fff; }
     header,.sidebar,.toolbar,.day-bar,.sheet-tabs,.status,.modal-bg,.pending-banner,#slotBar { display:none !important; }
     .layout { display:block; height:auto; }
@@ -278,11 +321,32 @@
 <body>
 <header>
   <div>
-    <h1>MrCrazy OrderDesk</h1>
-    <div class="sub">Online · Firebase AI key · Landscape sheets</div>
+    <h1>OrderDesk</h1>
+    <div class="sub">Hafiz Sweets · Professional order sheets</div>
   </div>
-  <div class="chip" id="todayChip">Today</div>
+  <div style="display:flex;align-items:center;gap:8px">
+    <div class="chip" id="todayChip">Today</div>
+    <button type="button" class="menu-btn" title="Menu" onclick="openDrawer()">⋮</button>
+  </div>
 </header>
+<div class="drawer-bg" id="drawerBg" onclick="closeDrawer()"></div>
+<div class="drawer" id="drawer">
+  <h3>Menu</h3>
+  <button type="button" onclick="printMode('all');closeDrawer()">Print All</button>
+  <button class="secondary" type="button" onclick="printMode('fc');closeDrawer()">Print F.C. Only</button>
+  <button class="secondary" type="button" onclick="printMode('sweets');closeDrawer()">Print Sweets Only</button>
+  <button class="secondary" type="button" onclick="printMode('other');closeDrawer()">Print Other Only</button>
+  <button class="secondary" type="button" onclick="printCurrent();closeDrawer()">Print Current Sheet</button>
+  <button class="amber" type="button" onclick="exportPdf();closeDrawer()">Download PDF</button>
+  <hr style="border:0;border-top:1px solid #334155;margin:12px 0"/>
+  <button class="secondary" type="button" onclick="showActive();closeDrawer()">Current Slot</button>
+  <button class="secondary" type="button" onclick="showHistory();closeDrawer()">History</button>
+  <button class="amber" type="button" id="btnCompleteMenu" style="display:none" onclick="completeSlot();closeDrawer()">Complete Slot (after 7:00 PM)</button>
+  <button class="secondary" type="button" onclick="showAuditLogs();closeDrawer()">Edit / Delete Logs</button>
+  <hr style="border:0;border-top:1px solid #334155;margin:12px 0"/>
+  <button class="secondary" type="button" onclick="exportDay();closeDrawer()">Export JSON</button>
+  <button class="red" type="button" onclick="clearDay();closeDrawer()">Clear This Day</button>
+</div>
 
 <div class="layout">
   <aside class="sidebar">
@@ -294,25 +358,26 @@
       <option value="8">8</option>
       <option value="10" selected>10</option>
     </select>
-    <label>ORDER</label>
-    <textarea id="raw" placeholder="Paste & write here Order"></textarea>
-    <button onclick="aiAdd()">MrCrazy Ai Order Add</button>
+    <label>ORDER TEXT</label>
+    <textarea id="raw" placeholder="Paste or type order here"></textarea>
+    <button onclick="aiAdd()">Add Order with AI</button>
     <div style="display:flex;gap:6px">
       <button class="secondary" style="flex:1" onclick="addManual('sweets')">+ Sweets</button>
       <button class="secondary" style="flex:1" onclick="addManual('fc')">+ F.C.</button>
       <button class="secondary" style="flex:1" onclick="addManual('other')">+ Other</button>
     </div>
-    <label>SPECIAL NOTE (Urdu)</label>
-    <textarea id="specialNote" placeholder="خاص نوٹ یہاں اردو میں لکھیں…" style="min-height:80px;direction:rtl;text-align:right"></textarea>
+    <label>SPECIAL NOTE</label>
+    <textarea id="specialNote" placeholder="Write note (English is auto-converted to Urdu when possible)" style="min-height:80px"></textarea>
     <button class="secondary" onclick="saveSpecialNote()">Save Special Note</button>
-    <button class="secondary" onclick="showAuditLogs()">Edit / Delete Logs</button>
-    <button class="secondary" onclick="newSheet()">+ New sheet</button>
-    <button class="red" onclick="clearDay()">Is din clear</button>
+    <button class="secondary" onclick="newSheet()">+ New Sheet</button>
+    <button class="red" onclick="clearDay()">Clear Day (keep logs)</button>
     <div class="status" id="status"></div>
     <div class="brand">
-      <b>Created by Muhammad Naeem</b><br/>
+      <b>About</b><br/>
+      Developed by <b>Muhammad Naeem</b><br/>
       MrCrazy Digital Company<br/>
       <a href="tel:03257436319">03257436319</a><br/>
+      <a href="mailto:MuhammadNaeem5658@gmail.com">MuhammadNaeem5658@gmail.com</a><br/>
       <a href="https://mrcrazydev.netlify.app/" target="_blank" rel="noopener">mrcrazydev.netlify.app</a>
     </div>
   </aside>
@@ -324,22 +389,12 @@
       <span style="color:var(--muted);font-size:.78rem" id="ticketCount">0</span>
       <span class="chip" id="slotChip" style="background:#1e3a5f;color:#93c5fd">2nd Orders</span>
     </div>
-    <div class="toolbar" id="slotBar" style="margin-bottom:8px">
-      <button class="secondary sm" type="button" onclick="showActive()">Current slot</button>
-      <button class="secondary sm" type="button" onclick="showHistory()">History</button>
-      <button class="amber sm" type="button" id="btnComplete" style="display:none" onclick="completeSlot()">Complete (7PM+)</button>
+    <div id="slotBar" style="margin-bottom:6px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <span class="chip" id="slotChip">2nd Orders</span>
       <span style="color:var(--muted);font-size:.75rem" id="slotHint"></span>
     </div>
     <div class="sheet-tabs" id="sheetTabs"></div>
-    <div class="toolbar">
-      <button class="amber sm" onclick="printMode('all')">Print All</button>
-      <button class="secondary sm" onclick="printMode('fc')">Print F.C. only</button>
-      <button class="secondary sm" onclick="printMode('other')">Print Other only</button>
-      <button class="secondary sm" onclick="printMode('sweets')">Print Sweets only</button>
-      <button class="secondary sm" onclick="printCurrent()">Print current sheet</button>
-      <button class="amber sm" onclick="exportPdf()">Export PDF</button>
-      <button class="secondary sm" onclick="exportDay()">Export JSON</button>
-    </div>
+    <div id="todayPendingHost"></div>
     <div class="sheet-wrap" id="printArea"><div class="sheet" id="sheet"></div></div>
   </main>
 </div>
@@ -351,7 +406,8 @@
     <label>Name (customer / on cake)</label><input id="eName"/>
     <label>Qty</label><input id="eQty"/>
     <label>Flavour</label><input id="eFlavour"/>
-    <label>Tafseel / Note</label><textarea id="eDetail" style="min-height:90px"></textarea>
+    <label>Description</label><textarea id="eDetail" style="min-height:90px"></textarea>
+    <label>Delivery (date / time if any)</label><input id="eDelivery" placeholder="e.g. 12 Nov · 6 PM"/>
     <div class="row">
       <button class="secondary" onclick="closeModal()">Cancel</button>
       <button class="red" onclick="deleteTicket()">Delete</button>
@@ -373,6 +429,59 @@ function todayStr(){
   return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
 }
 function esc(s){ return String(s??"").replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function popup(title, msg, opts){
+  return new Promise(resolve => {
+    const bg = document.createElement("div");
+    bg.className = "popup-bg show";
+    const ok = (opts && opts.ok) || "OK";
+    const cancel = opts && opts.cancel;
+    bg.innerHTML = `<div class="popup"><h3>${esc(title)}</h3><p>${esc(msg)}</p><div class="prow"></div></div>`;
+    const row = bg.querySelector(".prow");
+    const b1 = document.createElement("button");
+    b1.textContent = ok;
+    b1.onclick = () => { bg.remove(); resolve(true); };
+    row.appendChild(b1);
+    if (cancel) {
+      const b2 = document.createElement("button");
+      b2.className = "secondary";
+      b2.textContent = cancel;
+      b2.onclick = () => { bg.remove(); resolve(false); };
+      row.appendChild(b2);
+    }
+    document.body.appendChild(bg);
+  });
+}
+function openDrawer(){ $("drawerBg").classList.add("show"); $("drawer").classList.add("open"); }
+function closeDrawer(){ $("drawerBg").classList.remove("show"); $("drawer").classList.remove("open"); }
+function dayName(ymd){
+  try {
+    const [y,m,d] = String(ymd).split("-").map(Number);
+    const dt = new Date(y, m-1, d);
+    return dt.toLocaleDateString("en-US", { weekday:"long" });
+  } catch(e){ return ""; }
+}
+function listFuturePendingDays(){
+  const t0 = todayStr();
+  const out = [];
+  Object.keys(db||{}).forEach(k => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(k)) return;
+    if (k <= t0) return;
+    const dayObj = db[k];
+    if (!dayObj || !dayObj.sheets) return;
+    let tot = 0;
+    dayObj.sheets.forEach(s => tot += sheetTotal(s));
+    if (tot > 0) out.push({ date:k, total:tot });
+  });
+  out.sort((a,b)=>a.date.localeCompare(b.date));
+  return out;
+}
+function viewPendingDate(d){
+  day = d;
+  $("dayDate").value = d;
+  sheetIndex = 0;
+  window._histView = false;
+  loadDayOnline();
+}
 
 let db = loadDb();
 let day = todayStr();
@@ -440,7 +549,7 @@ function showActive(){
 function showHistory(){
   ensureDayLocal();
   const h = db[day].history || [];
-  if (!h.length){ setStatus("History khali — pehle Complete karein"); return; }
+  if (!h.length){ popup("History empty", "No completed slots yet. Use Complete Slot after 7:00 PM."); return; }
   window._histView = true;
   window._histIndex = h.length - 1;
   sheetIndex = 0;
@@ -449,12 +558,13 @@ function showHistory(){
 function completeSlot(){
   ensureDayLocal();
   if (!isAfter7pm()){
-    setStatus("Complete 7:00 PM ke baad available hai");
+    popup("Not available", "Complete Slot is available after 7:00 PM.");
     return;
   }
   const total = (db[day].sheets||[]).reduce((a,s)=>a+sheetTotal(s),0);
-  if (!total){ setStatus("Complete ke liye orders nahi"); return; }
-  if (!confirm("Current slot complete?\nOrders History me chale jayenge, sheet khali ho jayegi.\n7PM ke baad naye orders alag banenge.")) return;
+  if (!total){ popup("No orders", "There are no orders in the current slot to complete."); return; }
+  // sync confirm
+  if (!confirm("Complete current slot?\nOrders will move to History and the sheet will be cleared.\nNew orders after this will start a new slot.")) return;
   const batch = {
     completedAt: Date.now(),
     label: db[day].slotLabel || "2nd Orders",
@@ -570,30 +680,47 @@ function formatWhen(ts){
     return ds + " · " + tm;
   } catch(e){ return ""; }
 }
+function qtyHtml(q){
+  const s = String(q||"").trim();
+  if (!s) return "";
+  // highlight kg / pound style
+  if (/\b(kg|kilo|pound|lb|پونڈ|کلو)\b/i.test(s) || /\d/.test(s)) {
+    return `<span class="qty-hl nums">${esc(s)}</span>`;
+  }
+  return `<span class="nums">${esc(s)}</span>`;
+}
 function ticketHtml(o, i, side){
   const prefix = side==="fc" ? "F.C." : side==="other" ? "O" : "S";
-  let nameVal = "";
-  if (o.nameOnCakeEn || o.nameOnCakeUr) {
-    nameVal = [o.nameOnCakeEn, o.nameOnCakeUr].filter(Boolean).join(" / ");
-  } else {
-    nameVal = o.customerName || "—";
-  }
   const shop = (o.shopName || "—").trim() || "—";
+  let nameEn = (o.nameOnCakeEn || "").trim();
+  let nameUr = (o.nameOnCakeUr || "").trim();
+  if (!nameEn && !nameUr) nameEn = (o.customerName || "—").trim();
+  const nameLine = [nameEn, nameUr].filter(Boolean).join(" / ");
   const flav = o.flavour ? `<div class="t-line"><b>Flav.</b> ${esc(o.flavour)}</div>` : "";
   const rate = o.rateNote ? `<div class="t-line"><b>Rate.</b> ${esc(o.rateNote)}</div>` : "";
-  const det = (o.detailUrdu||"").trim();
-  const when = formatWhen(o.createdAt || o.updatedAt);
+  const deliv = (o.delivery || "").trim();
+  // description: qty first then rest (detail without leading qty if duplicated)
+  let det = (o.detailUrdu || "").trim();
+  const q = (o.qty || "").trim();
+  if (q && det) {
+    const low = det.toLowerCase();
+    const ql = q.toLowerCase();
+    if (low.startsWith(ql)) det = det.slice(q.length).replace(/^[\s\n\-–—:]+/, "").trim();
+  }
+  const detailBlock = (q || det)
+    ? `<div class="detail">${q ? qtyHtml(q) + (det ? "\n" : "") : ""}${det ? esc(det) : ""}</div>`
+    : "";
   return `<div class="ticket" onclick="openEdit('${side}',${i})">
     <div class="t-head">
       <span class="t-no">${esc(prefix+" "+(i+1))}</span>
       <span class="t-shop">${esc(shop)}</span>
-      <span class="t-qty nums">${esc(o.qty||"")}</span>
+      <span class="t-qty">${qtyHtml(o.qty||"")}</span>
     </div>
-    <div class="t-line"><b>Name.</b> ${esc(nameVal)}</div>
+    <div class="t-line"><b>Name.</b> ${esc(nameLine)}</div>
     ${flav}
     ${rate}
-    ${det ? `<div class="detail">${esc(det)}</div>` : ""}
-    ${when ? `<div class="t-when">${esc(when)}</div>` : ""}
+    ${deliv ? `<div class="t-delivery">Delivery: ${esc(deliv)}</div>` : ""}
+    ${detailBlock}
   </div>`;
 }
 function colHtml(title, side, list, cls){
@@ -639,10 +766,37 @@ function getSpecialNote(){
   }
   return db[day].specialNote || "";
 }
-function saveSpecialNote(){
-  if (viewingHistory()){ setStatus("History read-only"); return; }
+async function saveSpecialNote(){
+  if (viewingHistory()){ popup("Read-only", "History view cannot be edited."); return; }
   ensureDayLocal();
-  db[day].specialNote = ($("specialNote") && $("specialNote").value) || "";
+  let note = ($("specialNote") && $("specialNote").value) || "";
+  const looksEnglish = note && /[A-Za-z]{3,}/.test(note) && !/[\u0600-\u06FF]{3,}/.test(note);
+  if (looksEnglish) {
+    setStatus("Converting note to Urdu…");
+    try {
+      const key = await fetchApiKey();
+      const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method:"POST",
+        headers:{ "Content-Type":"application/json", "Authorization":"Bearer "+key },
+        body: JSON.stringify({
+          model: cachedModel || DEFAULT_MODEL,
+          temperature: 0.1,
+          max_tokens: 400,
+          messages: [
+            { role:"system", content: "Translate the user note to clear Urdu script only. No English. Keep meaning. Output only Urdu text." },
+            { role:"user", content: note }
+          ]
+        })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        const out = (data.choices?.[0]?.message?.content||"").trim();
+        if (out) note = out;
+      }
+    } catch(e) { console.warn(e); }
+  }
+  db[day].specialNote = note;
+  if ($("specialNote")) $("specialNote").value = note;
   saveDb();
   render();
   setStatus("Special note saved");
@@ -727,10 +881,11 @@ function buildSheetHtml(s, idx, totalSheets, mode){
   const modeTag = (!mode || mode === "all") ? "" : " · " + String(mode).toUpperCase();
   const now = new Date();
   const stamp = day + " · " + now.toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"});
+  const dlabel = esc(day) + (dayName(day) ? " · " + esc(dayName(day)) : "");
   return `<div class="sheet">
     <div class="sheet-head">
       <span class="h-left">Sheet ${idx+1}/${totalSheets}${modeTag}</span>
-      <span class="h-center">${esc(day)}</span>
+      <span class="h-center">${dlabel}</span>
       <span class="h-right"></span>
     </div>
     ${body}
@@ -770,15 +925,18 @@ function render(){
 
   const chip = $("slotChip");
   const hint = $("slotHint");
-  const btnC = $("btnComplete");
+  if (!chip || !hint) {
+    $("printArea").innerHTML = buildSheetHtml(curSheet(), sheetIndex, sheets.length);
+    return;
+  }
   if (viewingHistory()){
     const h = db[day].history || [];
     const idx = Math.max(0, Math.min(window._histIndex||0, h.length-1));
     const batch = h[idx];
-    chip.textContent = "History · " + (batch && batch.label ? batch.label : "");
+    chip.textContent = "History · " + (batch && batch.label ? batch.label : "Slot");
     chip.style.background = "#3b1d1d"; chip.style.color = "#fca5a5";
     hint.textContent = batch ? ("Completed: " + (batch.timeLabel||"")) : "";
-    if (btnC) btnC.style.display = "none";
+    // complete in menu
     // history batch tabs
     const tabs = $("sheetTabs"); tabs.innerHTML = "";
     h.forEach((batch,bi)=>{
@@ -799,11 +957,9 @@ function render(){
     chip.textContent = db[day].slotLabel || "2nd Orders";
     chip.style.background = "#1e3a5f"; chip.style.color = "#93c5fd";
     if (isAfter7pm()){
-      if (btnC) btnC.style.display = "";
-      hint.textContent = "7PM+ · Complete se pehle wale History me jayenge";
+      hint.textContent = "After 7:00 PM: Complete moves current orders to History.";
     } else {
-      if (btnC) btnC.style.display = "none";
-      hint.textContent = "Subah/shaam 7PM se pehle = 2nd Orders. 7PM baad Complete.";
+      hint.textContent = "Before 7:00 PM = current slot. Complete is available after 7:00 PM.";
     }
     const tabs = $("sheetTabs"); tabs.innerHTML = "";
     sheets.forEach((_,i)=>{
@@ -817,18 +973,31 @@ function render(){
   if ($("specialNote") && !viewingHistory()) {
     $("specialNote").value = db[day].specialNote || "";
   }
-  let pendingHtml = "";
-  if (isFutureDay(day) && !viewingHistory()) {
-    pendingHtml = `<div class="pending-banner">
-      <span>⏳ PENDING · Date ${esc(day)} — yeh orders abhi print me nahi aate</span>
-      <button type="button" onclick="alert('Yeh future date ke orders hain. Print tab hoga jab yeh date aa jaye / aaj select ho.')">Pending info</button>
-    </div>`;
+  // Today-only pending banner for future-dated orders
+  const host = $("todayPendingHost");
+  if (host) {
+    host.innerHTML = "";
+    if (!viewingHistory() && day === todayStr()) {
+      const pend = listFuturePendingDays();
+      if (pend.length) {
+        const bits = pend.map(p => `${p.date} (${p.total})`).join(", ");
+        host.innerHTML = `<div class="pending-banner">
+          <span>Your order is pending: ${esc(bits)}</span>
+          <button type="button" onclick="viewPendingDate('${pend[0].date}')">View</button>
+        </div>`;
+      }
+    }
   }
-  $("printArea").innerHTML = pendingHtml + buildSheetHtml(curSheet(), sheetIndex, sheets.length);
+  // Future date page: clean empty or data, NO pending banner
+  $("printArea").innerHTML = buildSheetHtml(curSheet(), sheetIndex, sheets.length);
+
+  // menu complete button
+  const bcm = $("btnCompleteMenu");
+  if (bcm) bcm.style.display = (!viewingHistory() && isAfter7pm()) ? "" : "none";
 }
 
 function openEdit(side,i){
-  if (viewingHistory()){ setStatus("History read-only"); return; }
+  if (viewingHistory()){ popup("Read-only", "History view cannot be edited."); return; }
   editRef = { side, i };
   const o = curSheet()[side][i];
   $("eShop").value = o.shopName||"";
@@ -836,6 +1005,7 @@ function openEdit(side,i){
   $("eQty").value = o.qty||"";
   $("eFlavour").value = o.flavour||"";
   $("eDetail").value = o.detailUrdu||"";
+  if ($("eDelivery")) $("eDelivery").value = o.delivery||"";
   $("modal").classList.add("show");
 }
 function closeModal(){ $("modal").classList.remove("show"); editRef=null; }
@@ -849,6 +1019,7 @@ function saveTicket(){
   o.qty=$("eQty").value.trim();
   o.flavour=$("eFlavour").value.trim();
   o.detailUrdu=$("eDetail").value.trim();
+  o.delivery=($("eDelivery")&&$("eDelivery").value||"").trim();
   o.updatedAt = Date.now();
   pushAudit("EDIT", (o.shopName||"") + " · " + (o.qty||"") + " · " + (o.detailUrdu||"").slice(0,80));
   saveDb(); closeModal(); render(); setStatus("Saved");
@@ -881,6 +1052,7 @@ function normalize(o, type){
     flavour: o.flavour || "",
     rateNote: o.rateNote || "",
     detailUrdu: o.detailUrdu || "",
+    delivery: o.delivery || "",
     type: o.type || type,
     createdAt: o.createdAt || Date.now()
   };
@@ -905,29 +1077,30 @@ Return ONLY JSON:
       "side": "fc" | "sweets" | "other",
       "shopName": "English",
       "customerName": "",
-      "nameOnCakeEn": "",
-      "nameOnCakeUr": "",
-      "qty": "4 Pound",
+      "nameOnCakeEn": "English name",
+      "nameOnCakeUr": "Urdu name if given",
+      "qty": "5 KG or 5 Pound",
       "flavour": "",
       "rateNote": "",
-      "detailUrdu": "only what customer said"
+      "delivery": "delivery date/time only if customer mentioned, else empty",
+      "detailUrdu": "description without shop name; qty first then other lines"
     }
   ]
 }
 
 RULES:
-1) Shop name is often written FIRST. ALWAYS fill shopName (English transliteration). Never leave shopName empty if any shop is mentioned. Also put shop clearly so ticket shows Shop. line.
-2) detailUrdu: write ONLY what the customer said, in clear Urdu lines. Do NOT add extra company padding, extra steps, or invented details.
-3) First detail line = quantity if given (e.g. 4 Pound cake).
-4) Name on cake: full name as customer wrote — nameOnCakeEn + nameOnCakeUr. Do not shorten long names.
-5) Butter cake/cream → flavour Butter + rateNote "Rate Rs.1500 per pound" and one detail line for rate only if butter.
+1) shopName is English and belongs in shopName only — never put shop name inside detailUrdu.
+2) detailUrdu: start with quantity (5 KG / 5 Pound) then remaining customer details. No shop name in detail.
+3) nameOnCakeEn = English; nameOnCakeUr = Urdu form if available. Show both when possible.
+4) If customer gives delivery date/time, put ONLY in delivery field (not as entry timestamp).
+5) Butter cake/cream → flavour Butter + rateNote "Rate Rs.1500 per pound".
 6) side: fc = cream/F.C./butter cream cake; sweets = mithai; other = jam/note/misc.
-7) Keep detailUrdu short and faithful — no more text than needed to reflect the order.
+7) Keep detail short and faithful.
 `;
 
 async function aiAdd(){
   const raw = $("raw").value.trim();
-  if (!raw) return setStatus("Paste & write order");
+  if (!raw) return popup("Empty", "Please paste or type an order first.");
   setStatus("Loading AI key…");
   try {
     const key = await fetchApiKey();
@@ -965,13 +1138,13 @@ async function aiAdd(){
     setStatus("Added");
   } catch(e) {
     cachedKey = "";
-    setStatus("Error: " + (e.message||e));
+    setStatus("Error"); popup("AI error", String(e.message||e));
   }
 }
 
 function printCurrent(){
   if (isFutureDay(day)) {
-    alert("Future pending orders print nahi.");
+    popup("Print blocked", "Future pending orders cannot be printed.");
     return;
   }
   window.print();
@@ -981,8 +1154,7 @@ function printCurrent(){
 function printMode(mode){
   ensureDayLocal();
   if (isFutureDay(day)) {
-    setStatus("Future date ("+day+") print nahi — pending orders hain");
-    alert("Yeh date abhi future hai. Print sirf aaj / past date ke orders ka.");
+    popup("Print blocked", "This date is in the future. Pending orders cannot be printed until that day.");
     return;
   }
   const area = $("printArea");
@@ -993,7 +1165,7 @@ function printMode(mode){
     if (sheetTotal(f) > 0) filtered.push(f);
   });
   if (!filtered.length) {
-    setStatus("Is filter me koi order nahi · " + mode);
+    setStatus("No orders for filter: " + mode); popup("Nothing to print", "No orders match this filter.");
     return;
   }
   area.innerHTML = filtered.map((s,i)=>buildSheetHtml(s, i, filtered.length, mode)).join("");
@@ -1004,7 +1176,7 @@ function printMode(mode){
 }
 function exportPdf(){
   if (isFutureDay(day)) {
-    alert("Future pending orders PDF print nahi.");
+    popup("PDF blocked", "Future pending orders cannot be exported as PDF.");
     return;
   }
   printMode("all");
