@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>MrCrazy OrderDesk</title>
+<title>Hafiz Sweets Special Order Sheet</title>
 <style>
   :root {
     --bg:#0b1220; --panel:#111a2b; --line:#2a3a55;
@@ -321,8 +321,8 @@
 <body>
 <header>
   <div>
-    <h1>OrderDesk</h1>
-    <div class="sub">Hafiz Sweets · Professional order sheets</div>
+    <h1>Hafiz Sweets Special Order Sheet</h1>
+    <div class="sub">Professional order desk</div>
   </div>
   <div style="display:flex;align-items:center;gap:8px">
     <div class="chip" id="todayChip">Today</div>
@@ -518,7 +518,7 @@ function isFutureDay(d){
   const t0 = todayStr();
   return String(d || day) > t0;
 }
-function pushAudit(action, detail){
+function pushAudit(action, payload){
   ensureDayLocal();
   if (!db._globalAudit) db._globalAudit = [];
   const row = {
@@ -526,14 +526,29 @@ function pushAudit(action, detail){
     at: Date.now(),
     day: day,
     action: action,
-    detail: detail || ""
+    payload: payload || null,
+    detail: typeof payload === "string" ? payload : (payload && payload.summary) || ""
   };
   db._globalAudit.unshift(row);
   if (db._globalAudit.length > 2000) db._globalAudit.length = 2000;
-  // also day-scoped copy (read-only list)
   db[day].auditLogs = db[day].auditLogs || [];
   db[day].auditLogs.unshift(row);
   saveDbLocal();
+}
+function snapOrder(o){
+  if (!o) return null;
+  return {
+    shopName: o.shopName || "",
+    name: [o.nameOnCakeEn||"", o.nameOnCakeUr||"", o.customerName||""].filter(Boolean).join(" / "),
+    qty: o.qty || "",
+    flavour: o.flavour || "",
+    delivery: o.delivery || "",
+    detailUrdu: o.detailUrdu || ""
+  };
+}
+function fmtSnap(s){
+  if (!s) return "—";
+  return [s.shopName, s.qty, s.name, s.flavour, s.delivery, s.detailUrdu].filter(Boolean).join(" · ");
 }
 function isAfter7pm(){
   const n = new Date();
@@ -695,7 +710,8 @@ function ticketHtml(o, i, side){
   let nameEn = (o.nameOnCakeEn || "").trim();
   let nameUr = (o.nameOnCakeUr || "").trim();
   if (!nameEn && !nameUr) nameEn = (o.customerName || "—").trim();
-  const nameLine = [nameEn, nameUr].filter(Boolean).join(" / ");
+  let nameLine = nameEn || "—";
+  if (nameUr && nameUr !== nameEn) nameLine = nameEn + " / " + nameUr;
   const flav = o.flavour ? `<div class="t-line"><b>Flav.</b> ${esc(o.flavour)}</div>` : "";
   const rate = o.rateNote ? `<div class="t-line"><b>Rate.</b> ${esc(o.rateNote)}</div>` : "";
   const deliv = (o.delivery || "").trim();
@@ -810,28 +826,89 @@ function specialNoteHtml(){
   </div>`;
 }
 function showAuditLogs(){
-  const all = (db._globalAudit || []).slice(0, 300);
-  const dayLogs = ((db[day] && db[day].auditLogs) || []).slice(0, 200);
-  const list = all.length ? all : dayLogs;
-  let html = `<div class="audit-list">`;
-  if (!list.length) html += `<div style="color:#94a3b8">Abhi koi edit/delete log nahi.</div>`;
+  const list = (db._globalAudit || []).slice(0, 400);
+  let html = `<div class="audit-list" id="auditPrintArea">`;
+  if (!list.length) html += `<div style="color:#94a3b8">No edit or delete logs yet.</div>`;
   list.forEach(r => {
     const when = formatWhen(r.at);
-    html += `<div class="audit-row"><b>${esc(r.action)}</b> · ${esc(r.day||"")}<br/>${esc(when)}<br/>${esc(r.detail||"")}</div>`;
+    const p = r.payload || {};
+    let body = "";
+    if (r.action === "EDIT" && p.old && p.edited) {
+      body = `<div style="margin-top:6px;text-align:left">
+        <div style="background:#1e293b;border-radius:8px;padding:8px;margin-bottom:6px">
+          <div style="color:#fbbf24;font-weight:800;font-size:.72rem">OLD ORDER</div>
+          <div style="font-size:.78rem;color:#e2e8f0">${esc(fmtSnap(p.old))}</div>
+        </div>
+        <div style="background:#052e1c;border-radius:8px;padding:8px">
+          <div style="color:#4ade80;font-weight:800;font-size:.72rem">EDITED ORDER</div>
+          <div style="font-size:.78rem;color:#e2e8f0">${esc(fmtSnap(p.edited))}</div>
+        </div>
+      </div>`;
+    } else if (r.action === "DELETE" && p.deleted) {
+      body = `<div style="margin-top:6px;text-align:left;background:#3b1212;border-radius:8px;padding:8px">
+        <div style="color:#fca5a5;font-weight:800;font-size:.72rem">DELETED ORDER</div>
+        <div style="font-size:.78rem;color:#fecaca">${esc(fmtSnap(p.deleted))}</div>
+      </div>`;
+    } else {
+      body = `<div style="margin-top:4px;font-size:.78rem;color:#cbd5e1">${esc(r.detail||"")}</div>`;
+    }
+    const badge = r.action === "DELETE" ? "#ef4444" : r.action === "EDIT" ? "#f59e0b" : "#38bdf8";
+    html += `<div class="audit-row">
+      <div style="display:flex;justify-content:space-between;gap:8px;align-items:center">
+        <span style="background:${badge};color:#0f172a;font-weight:900;font-size:.68rem;padding:2px 8px;border-radius:999px">${esc(r.action)}</span>
+        <span style="color:#94a3b8;font-size:.72rem">${esc(when)}</span>
+      </div>
+      <div style="color:#94a3b8;font-size:.72rem;margin-top:4px">Date key: ${esc(r.day||"")}</div>
+      ${body}
+    </div>`;
   });
-  html += `</div><p style="font-size:12px;color:#94a3b8;margin-top:8px">Logs permanent hain — delete nahi ho sakte.</p>`;
-  const wrap = document.createElement("div");
-  wrap.innerHTML = html;
+  html += `</div>
+    <p style="font-size:12px;color:#94a3b8;margin-top:8px">Logs are permanent and cannot be deleted.</p>
+    <div class="row" style="display:flex;gap:8px;margin-top:10px">
+      <button class="secondary" type="button" id="auditClose">Close</button>
+      <button type="button" id="auditPdf">Download Logs PDF</button>
+    </div>`;
   const box = document.createElement("div");
   box.className = "modal-bg show";
-  box.innerHTML = `<div class="modal" style="max-width:520px;max-height:80vh;overflow:auto"><h3>Edit / Delete Logs</h3></div>`;
-  box.querySelector(".modal").appendChild(wrap);
-  const close = document.createElement("button");
-  close.className = "secondary";
-  close.textContent = "Close";
-  close.onclick = () => box.remove();
-  box.querySelector(".modal").appendChild(close);
+  box.innerHTML = `<div class="modal" style="max-width:560px;max-height:85vh;overflow:auto"><h3>Edit / Delete Logs</h3>${html}</div>`;
   document.body.appendChild(box);
+  box.querySelector("#auditClose").onclick = () => box.remove();
+  box.querySelector("#auditPdf").onclick = () => printAuditPdf(list);
+}
+function printAuditPdf(list){
+  const w = window.open("", "_blank", "width=900,height=700");
+  if (!w) { popup("Popup blocked", "Allow popups to download logs PDF."); return; }
+  let rows = "";
+  (list||[]).forEach(r => {
+    const when = formatWhen(r.at);
+    const p = r.payload || {};
+    let body = esc(r.detail||"");
+    if (r.action === "EDIT" && p.old && p.edited) {
+      body = `<b>OLD:</b> ${esc(fmtSnap(p.old))}<br/><b>EDITED:</b> ${esc(fmtSnap(p.edited))}`;
+    } else if (r.action === "DELETE" && p.deleted) {
+      body = `<b>DELETED:</b> ${esc(fmtSnap(p.deleted))}`;
+    }
+    rows += `<div style="border:1px solid #cbd5e1;border-radius:8px;padding:10px;margin:0 0 8px">
+      <div style="display:flex;justify-content:space-between;font-weight:800">
+        <span>${esc(r.action)}</span><span>${esc(when)}</span>
+      </div>
+      <div style="color:#64748b;font-size:12px">Day: ${esc(r.day||"")}</div>
+      <div style="margin-top:6px;font-size:13px;line-height:1.4">${body}</div>
+    </div>`;
+  });
+  w.document.write(`<!DOCTYPE html><html><head><title>Order Logs</title>
+    <style>
+      body{font-family:Segoe UI,system-ui,sans-serif;padding:18px;color:#0f172a}
+      h1{font-size:18px;margin:0 0 4px}
+      .sub{color:#64748b;margin-bottom:14px;font-size:13px}
+      @media print{*{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+    </style></head><body>
+    <h1>Hafiz Sweets Special Order Sheet — Logs</h1>
+    <div class="sub">Developed by Muhammad Naeem · Permanent audit log</div>
+    ${rows || "<p>No logs</p>"}
+    <script>window.onload=function(){window.print();}<\/script>
+    </body></html>`);
+  w.document.close();
 }
 
 function summaryHtml(s){
@@ -885,7 +962,7 @@ function buildSheetHtml(s, idx, totalSheets, mode){
   return `<div class="sheet">
     <div class="sheet-head">
       <span class="h-left">Sheet ${idx+1}/${totalSheets}${modeTag}</span>
-      <span class="h-center">${dlabel}</span>
+      <span class="h-center">Hafiz Sweets Special Order Sheet<br/><span style="font-size:.78rem;font-weight:700">${dlabel}</span></span>
       <span class="h-right"></span>
     </div>
     ${body}
@@ -1012,7 +1089,7 @@ function closeModal(){ $("modal").classList.remove("show"); editRef=null; }
 function saveTicket(){
   if (!editRef) return;
   const o = curSheet()[editRef.side][editRef.i];
-  const before = JSON.stringify(o);
+  const oldSnap = snapOrder(o);
   o.shopName=$("eShop").value.trim();
   o.customerName=$("eName").value.trim();
   o.nameOnCakeEn = o.customerName;
@@ -1021,13 +1098,21 @@ function saveTicket(){
   o.detailUrdu=$("eDetail").value.trim();
   o.delivery=($("eDelivery")&&$("eDelivery").value||"").trim();
   o.updatedAt = Date.now();
-  pushAudit("EDIT", (o.shopName||"") + " · " + (o.qty||"") + " · " + (o.detailUrdu||"").slice(0,80));
+  const newSnap = snapOrder(o);
+  pushAudit("EDIT", {
+    summary: (o.shopName||"") + " · " + (o.qty||""),
+    old: oldSnap,
+    edited: newSnap
+  });
   saveDb(); closeModal(); render(); setStatus("Saved");
 }
 function deleteTicket(){
-  if (!editRef || !confirm("Delete?")) return;
+  if (!editRef || !confirm("Delete this order?")) return;
   const o = curSheet()[editRef.side][editRef.i];
-  pushAudit("DELETE", (o.shopName||"") + " · " + (o.qty||"") + " · " + (o.detailUrdu||"").slice(0,80));
+  pushAudit("DELETE", {
+    summary: (o.shopName||"") + " · " + (o.qty||""),
+    deleted: snapOrder(o)
+  });
   curSheet()[editRef.side].splice(editRef.i,1);
   saveDb(); closeModal(); render();
 }
@@ -1067,7 +1152,7 @@ function addManual(side){
   render();
 }
 
-const SYSTEM = `You are bakery order desk AI for Pakistan (Hafiz-style order slips).
+const SYSTEM = `You are bakery order desk AI for Pakistan (Hafiz Sweets style slips).
 User text may be Roman Urdu, Urdu, or English. Understand meaning.
 
 Return ONLY JSON:
@@ -1077,25 +1162,25 @@ Return ONLY JSON:
       "side": "fc" | "sweets" | "other",
       "shopName": "English",
       "customerName": "",
-      "nameOnCakeEn": "English name",
-      "nameOnCakeUr": "Urdu name if given",
+      "nameOnCakeEn": "English name letters",
+      "nameOnCakeUr": "same name in Urdu script when possible",
       "qty": "5 KG or 5 Pound",
       "flavour": "",
       "rateNote": "",
       "delivery": "delivery date/time only if customer mentioned, else empty",
-      "detailUrdu": "description without shop name; qty first then other lines"
+      "detailUrdu": "MUST be Urdu script (Arabic letters). Qty first, then other details. No shop name."
     }
   ]
 }
 
 RULES:
-1) shopName is English and belongs in shopName only — never put shop name inside detailUrdu.
-2) detailUrdu: start with quantity (5 KG / 5 Pound) then remaining customer details. No shop name in detail.
-3) nameOnCakeEn = English; nameOnCakeUr = Urdu form if available. Show both when possible.
-4) If customer gives delivery date/time, put ONLY in delivery field (not as entry timestamp).
-5) Butter cake/cream → flavour Butter + rateNote "Rate Rs.1500 per pound".
-6) side: fc = cream/F.C./butter cream cake; sweets = mithai; other = jam/note/misc.
-7) Keep detail short and faithful.
+1) shopName English only — never inside detailUrdu.
+2) detailUrdu MUST always be written in Urdu script (not Roman Urdu, not English). First line quantity (e.g. 5 کلو / 5 پاؤنڈ) then remaining details in Urdu.
+3) nameOnCakeEn = English; nameOnCakeUr = Urdu script of the name when possible. Both fields when a name exists.
+4) Delivery date/time only in delivery field.
+5) Butter → flavour Butter + rateNote "Rate Rs.1500 per pound".
+6) side: fc = cream/F.C./butter cream; sweets = mithai; other = jam/note/misc.
+7) Short and faithful. No invented details.
 `;
 
 async function aiAdd(){
