@@ -281,40 +281,62 @@
   }
   .audit-row b { color:#4ade80; }
 
-  @page { size: A4 landscape; margin: 6mm; }
+  .sheet-bottom {
+    position:relative; z-index:2; display:flex; gap:10px; align-items:flex-end;
+    justify-content:space-between; padding:6px 10px 8px;
+    border-top:1.5px solid #0f172a; background:#f8fafc; flex-shrink:0;
+  }
+  .sheet-bottom .sn-corner {
+    flex:1; max-width:55%;
+    border:2px solid #0B8457; border-radius:6px; background:#ecfdf5;
+    padding:5px 8px;
+  }
+  .sheet-bottom .sn-corner h4 {
+    margin:0 0 2px; font-size:.72rem; font-weight:900; color:#065f46;
+    letter-spacing:.06em; text-transform:uppercase;
+  }
+  .sheet-bottom .sn-corner .sn-body {
+    direction:rtl; text-align:right; font-size:.78rem; font-weight:800;
+    line-height:1.3; color:#0f172a; white-space:pre-wrap;
+    font-family:"Noto Nastaliq Urdu","Segoe UI",Tahoma,sans-serif;
+  }
+  .sheet-bottom .dev-corner {
+    text-align:right; font-size:.58rem; color:#64748b; line-height:1.25;
+    max-width:42%;
+  }
+  .sheet-bottom .dev-corner b { color:#0f172a; font-size:.62rem; }
+  .pack-grid {
+    display:grid; grid-template-columns:1fr 1fr; gap:4px 6px;
+    padding:4px 6px; position:relative; z-index:1;
+  }
+  .pack-grid .ticket { max-width:none; width:100%; font-size:.65rem; padding:3px 5px; }
+  .pack-grid .ticket .t-shop { font-size:.78rem; }
+  .pack-grid .ticket .detail { font-size:.68rem; }
+  @page { size: A4 landscape; margin: 5mm; }
   @media print {
     * { -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; }
-    body { background:#fff; }
-    header,.sidebar,.toolbar,.day-bar,.sheet-tabs,.status,.modal-bg,.pending-banner,#slotBar { display:none !important; }
+    html, body { background:#fff !important; height:auto; }
+    header,.sidebar,.toolbar,.day-bar,.sheet-tabs,.status,.modal-bg,.pending-banner,#slotBar,#todayPendingHost,.drawer,.drawer-bg { display:none !important; }
     .layout { display:block; height:auto; }
     .main { padding:0; background:#fff; overflow:visible; }
     .sheet-wrap { display:block; }
     .sheet {
       box-shadow:none; max-width:100%; width:100%;
-      aspect-ratio:auto; min-height:auto;
-      height:auto;
-      page-break-after:always; break-after:page;
+      aspect-ratio:auto; min-height:0; height:auto;
+      max-height:190mm;
+      page-break-after:avoid; break-after:avoid;
+      page-break-inside:avoid; overflow:hidden;
+      border:0;
     }
-    .sheet:last-child { page-break-after:auto; break-after:auto; }
-    .ticket { flex:0 0 auto; }
-    .list { flex:0 1 auto; }
-    .null-block {
-    position:relative; z-index:2; margin-top:8px; flex-shrink:0;
-    border:1.5px solid #b91c1c; background:#fef2f2; padding:5px 8px;
-    font-size:.72rem;
-  }
-  .null-block h4 {
-    margin:0 0 3px; font-size:.78rem; letter-spacing:.06em; text-align:center;
-    color:#991b1b; font-weight:900;
-  }
-  .null-block .null-name {
-    font-weight:700; color:#7f1d1d; padding:1px 0;
-    border-bottom:1px dashed #fca5a5;
-  }
-  .null-block .null-name:last-child { border-bottom:0; }
-  .sheet-summary { margin-top:12px; }
-    .ticket { cursor:default; break-inside:avoid; }
+    .sheet:last-child { page-break-after:auto; }
+    .ticket { flex:0 0 auto; break-inside:avoid; cursor:default; }
     .ticket:hover { box-shadow:none; }
+    .list { flex:0 1 auto; max-width:none; }
+    .cols.c1 { grid-template-columns:1fr; }
+    .pack-grid { grid-template-columns:1fr 1fr; gap:3px 5px; }
+    .sheet-summary { margin-top:4px; font-size:.65rem; padding:4px 8px; }
+    .sheet-head { padding:3px 8px; font-size:.72rem; }
+    .col-title { font-size:.68rem; padding:2px; }
   }
 </style>
 </head>
@@ -942,23 +964,51 @@ function filterSheet(s, mode){
   };
 }
 
+function packTicketsHtml(f){
+  // Fill both columns — do not leave one side empty when only one type
+  const items = [];
+  (f.sweets||[]).forEach((o,i)=> items.push({side:"sweets", o, i}));
+  (f.fc||[]).forEach((o,i)=> items.push({side:"fc", o, i}));
+  (f.other||[]).forEach((o,i)=> items.push({side:"other", o, i}));
+  if (!items.length) return `<div class="empty-sheet">No orders on this sheet</div>`;
+  return `<div class="pack-grid">${items.map(it => ticketHtml(it.o, it.i, it.side)).join("")}</div>`;
+}
 function buildSheetHtml(s, idx, totalSheets, mode){
-  const f = filterSheet(s, mode || "all");
-  const parts = [];
-  if (f.sweets.length) parts.push(colHtml("SWEETS ORDER", "sweets", f.sweets, "sweets"));
-  if (f.fc.length) parts.push(colHtml("F.C. ORDER", "fc", f.fc, "fc"));
-  if (f.other.length) parts.push(colHtml("OTHER / NOTE", "other", f.other, "other"));
-  const n = parts.length;
-  const colsClass = n <= 1 ? "c1" : n === 2 ? "c2" : "c3";
-  const body = n
-    ? `<div class="cols ${colsClass}">${parts.join("")}</div>`
-    : `<div class="empty-sheet">No orders on this sheet</div>`;
-  const sum = (sheetTotal(f) > 0) ? summaryHtml(f) : "";
-  const noteBlock = specialNoteHtml();
-  const modeTag = (!mode || mode === "all") ? "" : " · " + String(mode).toUpperCase();
+  const m = mode || "all";
+  const f = filterSheet(s, m);
+  const total = sheetTotal(f);
+  // Single-type print OR many orders: pack into 2-column grid so left/right both fill
+  const usePack = (m !== "all") || total >= 4;
+  let body;
+  if (!total) {
+    body = `<div class="empty-sheet">No orders on this sheet</div>`;
+  } else if (usePack) {
+    body = packTicketsHtml(f);
+  } else {
+    const parts = [];
+    if (f.sweets.length) parts.push(colHtml("SWEETS ORDER", "sweets", f.sweets, "sweets"));
+    if (f.fc.length) parts.push(colHtml("F.C. ORDER", "fc", f.fc, "fc"));
+    if (f.other.length) parts.push(colHtml("OTHER / NOTE", "other", f.other, "other"));
+    const n = parts.length;
+    const colsClass = n <= 1 ? "c1" : n === 2 ? "c2" : "c3";
+    body = `<div class="cols ${colsClass}">${parts.join("")}</div>`;
+  }
+  const sum = total > 0 ? summaryHtml(f) : "";
+  // Special note ONLY on full (all) print — not when printing one type
+  const showNote = (!m || m === "all");
+  const note = showNote ? getSpecialNote().trim() : "";
+  const modeTag = (!m || m === "all") ? "" : " · " + String(m).toUpperCase();
   const now = new Date();
   const stamp = day + " · " + now.toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"});
   const dlabel = esc(day) + (dayName(day) ? " · " + esc(dayName(day)) : "");
+  const noteCorner = note
+    ? `<div class="sn-corner"><h4>Special Note</h4><div class="sn-body">${esc(note)}</div></div>`
+    : `<div></div>`;
+  const devCorner = `<div class="dev-corner">
+      <div><b>Developed by Muhammad Naeem</b></div>
+      <div>This order was generated automatically by MrCrazy AI</div>
+      <div>${esc(stamp)}</div>
+    </div>`;
   return `<div class="sheet">
     <div class="sheet-head">
       <span class="h-left">Sheet ${idx+1}/${totalSheets}${modeTag}</span>
@@ -966,12 +1016,10 @@ function buildSheetHtml(s, idx, totalSheets, mode){
       <span class="h-right"></span>
     </div>
     ${body}
-    ${noteBlock}
     ${sum}
-    <div class="sheet-foot">
-      <div class="foot-brand">HAFIZ SWEETS LAL KHOOH</div>
-      <div class="foot-time">${esc(stamp)} &nbsp;·&nbsp; Developed by Muhammad Naeem</div>
-      <div class="ai-line"><span>This order was generated automatically by MrCrazy AI</span></div>
+    <div class="sheet-bottom">
+      ${noteCorner}
+      ${devCorner}
     </div>
   </div>`;
 }
@@ -1253,11 +1301,37 @@ function printMode(mode){
     setStatus("No orders for filter: " + mode); popup("Nothing to print", "No orders match this filter.");
     return;
   }
-  area.innerHTML = filtered.map((s,i)=>buildSheetHtml(s, i, filtered.length, mode)).join("");
+  // Prefer one page: merge up to 10 orders into one packed sheet for print
+  function flatten(sheets){
+    const out = { sweets:[], fc:[], other:[] };
+    sheets.forEach(s => {
+      const f = filterSheet(s, mode);
+      out.sweets.push(...(f.sweets||[]));
+      out.fc.push(...(f.fc||[]));
+      out.other.push(...(f.other||[]));
+    });
+    return out;
+  }
+  const flat = flatten(filtered);
+  const tot = sheetTotal(flat);
+  // chunk by 10 for safety, but aim 1 page
+  const chunks = [];
+  const orderList = [];
+  (flat.sweets||[]).forEach(o => orderList.push({side:"sweets", o}));
+  (flat.fc||[]).forEach(o => orderList.push({side:"fc", o}));
+  (flat.other||[]).forEach(o => orderList.push({side:"other", o}));
+  for (let i=0; i<orderList.length; i+=10) {
+    const slice = orderList.slice(i, i+10);
+    const sh = { sweets:[], fc:[], other:[] };
+    slice.forEach(it => sh[it.side].push(it.o));
+    chunks.push(sh);
+  }
+  if (!chunks.length) chunks.push({ sweets:[], fc:[], other:[] });
+  area.innerHTML = chunks.map((s,i)=>buildSheetHtml(s, i, chunks.length, mode)).join("");
   setTimeout(() => {
     window.print();
     render();
-  }, 120);
+  }, 150);
 }
 function exportPdf(){
   if (isFutureDay(day)) {
