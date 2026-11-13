@@ -791,8 +791,7 @@ function ticketHtml(o, i, side){
   if (q && det) {
     const low = det.toLowerCase();
     const ql = q.toLowerCase();
-    if (low.startsWith(ql)) det = det.slice(q.length).replace(/^[\s
-\-–—:]+/, "").trim();
+    if (low.startsWith(ql)) det = det.slice(q.length).replace(/^[\s\n\-–—:]+/, "").trim();
   }
   const detailBlock = (q || det)
     ? `<div class="detail">${q ? qtyHtml(q) + (det ? "\n" : "") : ""}${det ? esc(det) : ""}</div>`
