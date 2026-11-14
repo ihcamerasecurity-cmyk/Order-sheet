@@ -321,6 +321,9 @@
   .pack-grid .ticket { max-width:none; width:100%; font-size:.65rem; padding:3px 5px; }
   .pack-grid .ticket .t-shop { font-size:.78rem; }
   .pack-grid .ticket .detail { font-size:.68rem; }
+  .pack-grid.dense .ticket { font-size:.62rem; padding:2px 4px; }
+  .pack-grid.dense .ticket .t-shop { font-size:.74rem; }
+  .pack-grid.dense .ticket .detail { font-size:.6rem; line-height:1.2; }
   @page { size: A4 landscape; margin: 5mm; }
   @media print {
     * { -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; }
@@ -332,20 +335,28 @@
     .sheet {
       box-shadow:none; max-width:100%; width:100%;
       aspect-ratio:auto; min-height:0; height:auto;
-      max-height:190mm;
-      page-break-after:avoid; break-after:avoid;
-      page-break-inside:avoid; overflow:hidden;
+      max-height:none;
+      page-break-after:always; break-after:page;
+      page-break-inside:auto; overflow:visible;
       border:0;
     }
-    .sheet:last-child { page-break-after:auto; }
-    .ticket { flex:0 0 auto; break-inside:avoid; cursor:default; }
+    .sheet:last-child { page-break-after:auto; break-after:auto; }
+    .ticket { flex:0 0 auto; break-inside:avoid; page-break-inside:avoid; cursor:default; }
     .ticket:hover { box-shadow:none; }
     .list { flex:0 1 auto; max-width:none; }
     .cols.c1 { grid-template-columns:1fr; }
-    .pack-grid { grid-template-columns:1fr 1fr; gap:3px 5px; }
-    .sheet-summary { margin-top:4px; font-size:.65rem; padding:4px 8px; }
-    .sheet-head { padding:3px 8px; font-size:.72rem; }
-    .col-title { font-size:.68rem; padding:2px; }
+    .pack-grid { grid-template-columns:1fr 1fr; gap:3px 5px; align-content:start; }
+    .sheet-summary { margin-top:4px; font-size:.62rem; padding:3px 6px; }
+    .sheet-head { padding:3px 8px; font-size:.7rem; }
+    .col-title { font-size:.65rem; padding:2px; }
+    .sheet-bottom { padding:4px 8px; }
+    .sheet-bottom .sn-corner { font-size:.7rem; }
+    .sheet-bottom .dev-corner { font-size:.55rem; }
+    /* denser tickets so 8 fit on portrait too */
+    .pack-grid .ticket { font-size:.6rem; padding:2px 4px; }
+    .pack-grid .ticket .t-shop { font-size:.72rem; }
+    .pack-grid .ticket .detail { font-size:.62rem; line-height:1.25; }
+    .pack-grid .type-badge { font-size:.55rem; padding:0 4px; }
   }
 </style>
 </head>
@@ -1013,14 +1024,15 @@ function filterSheet(s, mode){
   };
 }
 
-function packTicketsHtml(f){
+function packTicketsHtml(f, total){
   // Fill both columns — do not leave one side empty when only one type
   const items = [];
   (f.sweets||[]).forEach((o,i)=> items.push({side:"sweets", o, i}));
   (f.fc||[]).forEach((o,i)=> items.push({side:"fc", o, i}));
   (f.other||[]).forEach((o,i)=> items.push({side:"other", o, i}));
   if (!items.length) return `<div class="empty-sheet">No orders on this sheet</div>`;
-  return `<div class="pack-grid">${items.map(it => ticketHtml(it.o, it.i, it.side)).join("")}</div>`;
+  const dense = (total || items.length) >= 6 ? " dense" : "";
+  return `<div class="pack-grid${dense}">${items.map(it => ticketHtml(it.o, it.i, it.side)).join("")}</div>`;
 }
 function buildSheetHtml(s, idx, totalSheets, mode){
   const m = mode || "all";
@@ -1032,7 +1044,7 @@ function buildSheetHtml(s, idx, totalSheets, mode){
   if (!total) {
     body = `<div class="empty-sheet">No orders on this sheet</div>`;
   } else if (usePack) {
-    body = packTicketsHtml(f);
+    body = packTicketsHtml(f, total);
   } else {
     const parts = [];
     if (f.sweets.length) parts.push(colHtml("SWEET ORDER · سویٹ آرڈر", "sweets", f.sweets, "sweets"));
@@ -1299,8 +1311,8 @@ Return ONLY JSON:
 }
 
 RULES:
-1) shopName English only — never inside detailUrdu.
-2) detailUrdu MUST always be written in Urdu script (not Roman Urdu, not English). First line quantity (e.g. 5 کلو / 5 پاؤنڈ) then remaining details in Urdu.
+1) The FIRST line of the user message is ALWAYS the shop name. Put it in shopName (English). Never leave shopName as "—" if a first line exists. Never put shop name inside detailUrdu.
+2) detailUrdu MUST always be written in Urdu script (not Roman Urdu, not English). Start with quantity (e.g. 5 کلو / 5 پاؤنڈ) then remaining details in Urdu. No shop name in detail.
 3) If multiple names on one cake (top/middle/bottom), fill names array in order: 1st, 2nd, 3rd. Also fill nameOnCakeEn/Ur for the first name.
 4) Delivery date/time only in delivery field.
 5) Butter → flavour Butter + rateNote "Rate Rs.1500 per pound".
@@ -1334,12 +1346,24 @@ async function aiAdd(){
       .replace(/^```json/i,"").replace(/^```/,"").replace(/```$/,"").trim();
     const parsed = JSON.parse(text);
     const list = Array.isArray(parsed.orders) ? parsed.orders : [];
+    const firstLine = raw.split(/\n/).map(x=>x.trim()).filter(Boolean)[0] || "";
     list.forEach(o => {
       let side = (o.side||"").toLowerCase();
       if (side !== "fc" && side !== "sweets" && side !== "other") {
         if (/cream|f\.?c/i.test(o.type||"")) side = "fc";
         else if (/jam|note|other|special/i.test(o.type||o.detailUrdu||"")) side = "other";
         else side = "sweets";
+      }
+      if (!o.shopName || o.shopName === "—" || !String(o.shopName).trim()) {
+        o.shopName = firstLine || o.shopName || "—";
+      }
+      // strip shop name from start of detail if duplicated
+      if (o.detailUrdu && o.shopName) {
+        const d = String(o.detailUrdu).trim();
+        const sn = String(o.shopName).trim();
+        if (d.toLowerCase().startsWith(sn.toLowerCase())) {
+          o.detailUrdu = d.slice(sn.length).replace(/^[\s\n\-–—:]+/, "").trim();
+        }
       }
       placeOrder(normalize(o, side), side);
     });
