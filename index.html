@@ -185,6 +185,12 @@
   .sheet-summary h4 { margin:0 0 4px; font-size:.78rem; letter-spacing:.04em; text-align:center; }
   .sum-line { display:flex; gap:6px; margin:1px 0; }
   .sum-line .n { font-weight:800; min-width:1.2em; }
+  .sum-row {
+    display:grid; grid-template-columns:repeat(4, 1fr); gap:2px 8px;
+    margin:2px 0; font-size:.68rem;
+  }
+  .sum-cell { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .sum-cell .n { font-weight:800; }
   .sum-total { margin-top:4px; font-weight:800; border-top:1px dashed #999; padding-top:3px; text-align:center; }
   .empty-sheet {
     flex:1; display:flex; align-items:center; justify-content:center;
@@ -998,19 +1004,24 @@ function summaryHtml(s){
   const keys = Object.keys(map);
   if (!keys.length) return "";
   let total = 0;
-  const lines = keys.map((name, i) => {
+  const cells = keys.map((name, i) => {
     const m = map[name];
     const parts = [];
     if (m.sweets) parts.push("Sweet " + m.sweets);
-    if (m.fc) parts.push("F.C. " + m.fc);
+    if (m.fc) parts.push("FC " + m.fc);
     if (m.other) parts.push("Other " + m.other);
     const c = m.sweets + m.fc + m.other;
     total += c;
-    return `<div class="sum-line"><span class="n">${i+1}.</span><span>${esc(name)} — ${esc(parts.join(", "))}</span></div>`;
-  }).join("");
+    return `<div class="sum-cell"><span class="n">${i+1}.</span> ${esc(name)} — ${esc(parts.join(", "))}</div>`;
+  });
+  // 4 per row
+  let rows = "";
+  for (let i = 0; i < cells.length; i += 4) {
+    rows += `<div class="sum-row">${cells.slice(i, i+4).join("")}</div>`;
+  }
   return `<div class="sheet-summary">
     <h4>TOTAL ORDERS · SHOP WISE</h4>
-    ${lines}
+    ${rows}
     <div class="sum-total">Total shops: ${keys.length} · Total orders: ${total}</div>
   </div>`;
 }
@@ -1231,7 +1242,13 @@ function saveTicket(){
   saveDb(); closeModal(); render(); setStatus("Saved");
 }
 function deleteTicket(){
-  if (!editRef || !confirm("Delete this order?")) return;
+  if (!editRef) return;
+  const code = prompt("Enter code to confirm delete:");
+  if (code === null) return;
+  if (String(code).trim() !== "786") {
+    popup("Denied", "Incorrect code. Order was not deleted.");
+    return;
+  }
   const o = curSheet()[editRef.side][editRef.i];
   pushAudit("DELETE", {
     summary: (o.shopName||"") + " · " + (o.qty||""),
@@ -1239,6 +1256,7 @@ function deleteTicket(){
   });
   curSheet()[editRef.side].splice(editRef.i,1);
   saveDb(); closeModal(); render();
+  setStatus("Order deleted");
 }
 
 function placeOrder(item, side){
@@ -1288,38 +1306,73 @@ function addManual(side){
   render();
 }
 
-const SYSTEM = `You are bakery order desk AI for Pakistan (Hafiz Sweets style slips).
-User text may be Roman Urdu, Urdu, or English. Understand meaning.
+const SYSTEM = `You are a professional bakery order-desk assistant for Hafiz Sweets (Pakistan).
+Write in clear business style. User text may be Roman Urdu, Urdu, or English.
 
 Return ONLY JSON:
 {
   "orders": [
     {
       "side": "fc" | "sweets" | "other",
-      "shopName": "English",
+      "shopName": "English shop name",
       "customerName": "",
-      "nameOnCakeEn": "English name letters",
-      "nameOnCakeUr": "same name in Urdu script when possible",
-      "names": [{"en":"1st top name","ur":""},{"en":"2nd name","ur":""},{"en":"3rd bottom name","ur":""}],
-      "qty": "5 KG or 5 Pound",
+      "nameOnCakeEn": "",
+      "nameOnCakeUr": "",
+      "names": [{"en":"1st","ur":""},{"en":"2nd","ur":""},{"en":"3rd","ur":""}],
+      "qty": "10 KG or 5 Pound",
       "flavour": "",
       "rateNote": "",
-      "delivery": "delivery date/time only if customer mentioned, else empty",
-      "detailUrdu": "MUST be Urdu script (Arabic letters). Qty first, then other details. No shop name."
+      "delivery": "",
+      "needsButterConfirm": false,
+      "detailUrdu": "Urdu script only. Qty first. Professional short lines. No shop name. No HAPPY BIRTHDAY or person names here."
     }
   ]
 }
 
-RULES:
-1) The FIRST line of the user message is ALWAYS the shop name. Put it in shopName (English). Never leave shopName as "—" if a first line exists. Never put shop name inside detailUrdu.
-2) detailUrdu MUST always be written in Urdu script (not Roman Urdu, not English). Start with quantity (e.g. 5 کلو / 5 پاؤنڈ) then remaining details in Urdu. No shop name in detail.
-3) If multiple names on one cake (top/middle/bottom), fill names array in order: 1st, 2nd, 3rd. Also fill nameOnCakeEn/Ur for the first name.
-4) Delivery date/time only in delivery field.
-5) Butter → flavour Butter + rateNote "Rate Rs.1500 per pound".
-6) side: fc = cream/F.C./butter cream; sweets = mithai; other = jam/note/misc.
-7) Short and faithful. No invented details.
+RULES (strict):
+1) FIRST LINE of input is ALWAYS shopName (English). Never empty if first line exists. Never put shop in detailUrdu.
+2) HAPPY BIRTHDAY and cake person names → names[] / nameOnCakeEn in English (1st top, 2nd, 3rd bottom). NOT inside detailUrdu.
+3) "2 in 1" / "2in1" / "دو ان ون" → flavour field (e.g. 2 in 1).
+4) detailUrdu ALWAYS Urdu script. Line1 = quantity. Then work notes only. Professional bakery wording.
+5) If butter / butter cream / بٹر may be a cake flavour, set needsButterConfirm=true (do not set rate yet).
+6) delivery only if customer gave time/date.
+7) side: fc = fresh cream cake; sweets = mithai/kg; other = notes.
+8) No invented details. Keep short and ordered.
 `;
 
+function extractNamesFromDetail(o){
+  let det = String(o.detailUrdu || "");
+  const names = Array.isArray(o.names) ? o.names.slice() : [];
+  // Pull HAPPY BIRTHDAY + following name-like English lines from detail
+  const re = /(happy\s*birthday[^\n]*)/ig;
+  let m;
+  const found = [];
+  while ((m = re.exec(det)) !== null) {
+    found.push(m[1].trim());
+  }
+  found.forEach(line => {
+    det = det.replace(line, "").trim();
+    const en = line.replace(/happy\s*birthday/ig, "HAPPY BIRTHDAY").trim();
+    if (en && !names.some(n => (n.en||"") === en)) names.push({ en, ur: "" });
+  });
+  // English ALL-CAPS name lines left in detail
+  const lines = det.split(/\n/).map(x => x.trim()).filter(Boolean);
+  const keep = [];
+  lines.forEach(line => {
+    if (/^[A-Z][A-Z\s'.]{2,}$/.test(line) && !/\d/.test(line) && line.length < 40) {
+      if (!names.some(n => (n.en||"") === line)) names.push({ en: line, ur: "" });
+    } else keep.push(line);
+  });
+  o.detailUrdu = keep.join("\n");
+  if (names.length) {
+    o.names = names;
+    o.nameOnCakeEn = names[0].en || o.nameOnCakeEn || "";
+    o.name1 = names[0] && names[0].en || o.name1 || "";
+    o.name2 = names[1] && names[1].en || o.name2 || "";
+    o.name3 = names[2] && names[2].en || o.name3 || "";
+  }
+  return o;
+}
 async function aiAdd(){
   const raw = $("raw").value.trim();
   if (!raw) return popup("Empty", "Please paste or type an order first.");
@@ -1347,7 +1400,7 @@ async function aiAdd(){
     const parsed = JSON.parse(text);
     const list = Array.isArray(parsed.orders) ? parsed.orders : [];
     const firstLine = raw.split(/\n/).map(x=>x.trim()).filter(Boolean)[0] || "";
-    list.forEach(o => {
+    async function handleOne(o){
       let side = (o.side||"").toLowerCase();
       if (side !== "fc" && side !== "sweets" && side !== "other") {
         if (/cream|f\.?c/i.test(o.type||"")) side = "fc";
@@ -1357,7 +1410,6 @@ async function aiAdd(){
       if (!o.shopName || o.shopName === "—" || !String(o.shopName).trim()) {
         o.shopName = firstLine || o.shopName || "—";
       }
-      // strip shop name from start of detail if duplicated
       if (o.detailUrdu && o.shopName) {
         const d = String(o.detailUrdu).trim();
         const sn = String(o.shopName).trim();
@@ -1365,8 +1417,31 @@ async function aiAdd(){
           o.detailUrdu = d.slice(sn.length).replace(/^[\s\n\-–—:]+/, "").trim();
         }
       }
+      // Move HAPPY BIRTHDAY / English name lines out of detail into names
+      o = extractNamesFromDetail(o);
+      // 2 in 1 → flavour
+      if (!o.flavour && /2\s*in\s*1|2in1|دو\s*ان\s*ون/i.test(String(o.detailUrdu||"")+" "+String(o.flavour||""))) {
+        o.flavour = "2 in 1";
+      }
+      // Butter confirm
+      const butterHit = o.needsButterConfirm || /butter\s*cream|\bbutter\b|بٹر\s*کریم|\bبٹر\b/i.test(
+        [o.flavour, o.detailUrdu, o.rateNote].join(" ")
+      );
+      if (butterHit) {
+        const yes = await popup(
+          "Butter flavour?",
+          "Is this a Butter / Butter Cream flavour cake?\nYes = rate Rs.1500 per pound.\nNo = keep as normal description item.",
+          { ok: "Yes", cancel: "No" }
+        );
+        if (yes) {
+          o.flavour = o.flavour && !/butter/i.test(o.flavour) ? (o.flavour + " · Butter") : (o.flavour || "Butter");
+          o.rateNote = "Rate Rs.1500 per pound";
+        }
+        // if No: leave text in detail as item name (do not force rate)
+      }
       placeOrder(normalize(o, side), side);
-    });
+    }
+    for (const o of list) { await handleOne(o); }
     $("raw").value = "";
     render();
     setStatus("Added");
