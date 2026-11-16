@@ -477,7 +477,7 @@
 <div class="modal-bg" id="nullModal">
   <div class="modal" style="max-width:540px;max-height:92vh;overflow:auto">
     <h3>Shop SMS Notification</h3>
-    <p style="color:var(--muted);font-size:.82rem;margin:0 0 10px">1) Add shop name + number · 2) Select shop · 3) Null or Done · 4) Bakery or Sweet · Send</p>
+    <p style="color:var(--muted);font-size:.82rem;margin:0 0 10px">1) Add shop · 2) Select · 3) Null or Done · 4) Bakery/Sweet · Send (mobile opens WhatsApp / Business — 1 message at a time)</p>
 
     <label>Shop name</label>
     <input id="listShopName" placeholder="e.g. Peco Bakery"/>
@@ -1750,9 +1750,9 @@ async function sendNullNotify(){
       body: JSON.stringify(body)
     });
     if (!r.ok) throw new Error("HTTP " + r.status);
-    $("nullStatus").textContent = "Queued · mobile will SMS when online";
+    $("nullStatus").textContent = "Queued · mobile will open WhatsApp (1 msg)";
     pushAudit("SMS_JOB", type + " · " + shop + " · " + phone);
-    setTimeout(() => { closeNullModal(); popup("Queued", "SMS job queued for " + shop + ". Mobile will send when phone is on."); }, 350);
+    setTimeout(() => { closeNullModal(); popup("Queued", "Job queued for " + shop + ". Mobile opens WhatsApp/Business one message at a time."); }, 350);
   } catch (e) {
     $("nullStatus").textContent = "Error";
     popup("Failed", String(e.message || e));
