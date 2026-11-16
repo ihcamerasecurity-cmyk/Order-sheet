@@ -397,6 +397,7 @@
   <button class="secondary" type="button" onclick="showHistory();closeDrawer()">History</button>
   <button class="amber" type="button" id="btnCompleteMenu" style="display:none" onclick="completeSlot();closeDrawer()">Complete Slot (after 7:00 PM)</button>
   <button class="secondary" type="button" onclick="showAuditLogs();closeDrawer()">Edit / Delete Logs</button>
+  <button class="amber" type="button" onclick="openNullShopNotify();closeDrawer()">Null Shop Notification</button>
   <hr style="border:0;border-top:1px solid #334155;margin:12px 0"/>
   <button class="secondary" type="button" onclick="exportDay();closeDrawer()">Export JSON</button>
   <button class="red" type="button" onclick="clearDay();closeDrawer()">Clear This Day</button>
@@ -470,6 +471,24 @@
       <button class="red" onclick="deleteTicket()">Delete</button>
       <button onclick="saveTicket()">Save</button>
     </div>
+  </div>
+</div>
+
+<div class="modal-bg" id="nullModal">
+  <div class="modal" style="max-width:460px">
+    <h3>Null Shop Notification</h3>
+    <p style="color:var(--muted);font-size:.82rem;margin:0 0 8px">Manual entry — mobile app will send a simple SMS to the shop number.</p>
+    <label>Shop name</label>
+    <input id="nullShopName" placeholder="e.g. Peco Bakery"/>
+    <label>Shop WhatsApp number</label>
+    <input id="nullShopPhone" placeholder="03XXXXXXXXX"/>
+    <label>Message (optional — default company text)</label>
+    <textarea id="nullShopMsg" style="min-height:90px" placeholder="Leave empty for default null message"></textarea>
+    <div class="row">
+      <button class="secondary" type="button" onclick="closeNullModal()">Cancel</button>
+      <button type="button" onclick="sendNullNotify()">Send to mobile</button>
+    </div>
+    <div class="status" id="nullStatus" style="margin-top:8px"></div>
   </div>
 </div>
 
@@ -1534,6 +1553,47 @@ function exportDay(){
   const a = document.createElement("a");
   a.href = URL.createObjectURL(new Blob([JSON.stringify(db[day],null,2)],{type:"application/json"}));
   a.download = "orders-"+day+".json"; a.click();
+}
+
+
+function openNullShopNotify(){
+  $("nullModal").classList.add("show");
+  $("nullStatus").textContent = "";
+}
+function closeNullModal(){ $("nullModal").classList.remove("show"); }
+async function sendNullNotify(){
+  const shop = ($("nullShopName").value || "").trim();
+  const phone = ($("nullShopPhone").value || "").trim();
+  let message = ($("nullShopMsg").value || "").trim();
+  if (!shop) return popup("Required", "Please enter shop name.");
+  if (!phone) return popup("Required", "Please enter shop WhatsApp number.");
+  if (!message) {
+    message = "Assalam o Alaikum.\n\nAap ki aaj ki demand NULL / cancel mark kar di gai hai.\n\nMazeed tafseel ke liye WhatsApp ya Call par rabta karein.\n\n— Hafiz Sweets / MrCrazy Ai Order";
+  }
+  $("nullStatus").textContent = "Sending…";
+  try {
+    const id = "n_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7);
+    const body = {
+      shop: shop,
+      phone: phone,
+      message: message,
+      status: "pending",
+      createdAt: Date.now(),
+      day: day || todayStr()
+    };
+    const r = await fetch(DB + "/orderdesk_null_notify/" + encodeURIComponent(id) + ".json", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    $("nullStatus").textContent = "Sent to server · mobile app will send SMS";
+    pushAudit("NULL_NOTIFY", shop + " · " + phone);
+    setTimeout(() => { closeNullModal(); popup("Queued", "Null SMS job queued for " + shop); }, 400);
+  } catch (e) {
+    $("nullStatus").textContent = "Error";
+    popup("Failed", String(e.message || e));
+  }
 }
 
 ensureDayLocal();
