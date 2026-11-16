@@ -475,18 +475,42 @@
 </div>
 
 <div class="modal-bg" id="nullModal">
-  <div class="modal" style="max-width:460px">
-    <h3>Null Shop Notification</h3>
-    <p style="color:var(--muted);font-size:.82rem;margin:0 0 8px">Manual entry — mobile app will send a simple SMS to the shop number.</p>
+  <div class="modal" style="max-width:540px;max-height:92vh;overflow:auto">
+    <h3>Shop SMS Notification</h3>
+    <p style="color:var(--muted);font-size:.82rem;margin:0 0 10px">1) Add shop name + number · 2) Select shop · 3) Null or Done · 4) Bakery or Sweet · Send</p>
+
     <label>Shop name</label>
-    <input id="nullShopName" placeholder="e.g. Peco Bakery"/>
-    <label>Shop WhatsApp number</label>
-    <input id="nullShopPhone" placeholder="03XXXXXXXXX"/>
-    <label>Message (optional — default company text)</label>
-    <textarea id="nullShopMsg" style="min-height:90px" placeholder="Leave empty for default null message"></textarea>
-    <div class="row">
-      <button class="secondary" type="button" onclick="closeNullModal()">Cancel</button>
-      <button type="button" onclick="sendNullNotify()">Send to mobile</button>
+    <input id="listShopName" placeholder="e.g. Peco Bakery"/>
+    <label>Shop number (SMS)</label>
+    <input id="listShopPhone" placeholder="03XXXXXXXXX"/>
+    <button type="button" onclick="addShopToList()" style="margin-top:8px">Add shop to list</button>
+
+    <label style="margin-top:12px">Saved shops</label>
+    <div id="shopListBox" style="margin-top:6px;max-height:150px;overflow:auto;border:1px solid var(--line);border-radius:10px;padding:8px;background:#0f1726;font-size:.82rem"></div>
+
+    <hr style="border:0;border-top:1px solid var(--line);margin:14px 0"/>
+
+    <label>Select shop</label>
+    <select id="nullShopSelect"><option value="">— Select shop —</option></select>
+
+    <label>Action</label>
+    <select id="nullAction">
+      <option value="null">Null (demand cancel)</option>
+      <option value="ok">Done (success added)</option>
+    </select>
+
+    <label>Type</label>
+    <select id="nullKind">
+      <option value="bakery">Bakery</option>
+      <option value="sweet">Sweet</option>
+    </select>
+
+    <label>Message preview</label>
+    <textarea id="nullShopMsg" style="min-height:110px"></textarea>
+
+    <div class="row" style="margin-top:10px">
+      <button class="secondary" type="button" onclick="closeNullModal()">Close</button>
+      <button type="button" onclick="sendNullNotify()">Send notification</button>
     </div>
     <div class="status" id="nullStatus" style="margin-top:8px"></div>
   </div>
@@ -1584,9 +1608,15 @@ function openNullShopNotify(){
 }
 function closeNullModal(){ $("nullModal").classList.remove("show"); }
 
+function currentMsgType(){
+  const action = ($("nullAction") && $("nullAction").value) || "null";
+  const kind = ($("nullKind") && $("nullKind").value) || "bakery";
+  if (action === "ok") return kind === "sweet" ? "ok_sweet" : "ok_bakery";
+  return kind === "sweet" ? "null_sweet" : "null_bakery";
+}
 function updateNullPreview(){
   const sel = $("nullShopSelect");
-  const type = ($("nullMsgType") && $("nullMsgType").value) || "null_bakery";
+  const type = currentMsgType();
   let shop = "";
   if (sel && sel.value) {
     try {
@@ -1597,49 +1627,60 @@ function updateNullPreview(){
   if ($("nullShopMsg")) $("nullShopMsg").value = msgTemplate(type, shop || "[Shop Name]");
 }
 
+function localShops(){
+  try { return JSON.parse(localStorage.getItem("od_shops_v1") || "{}"); } catch(e){ return {}; }
+}
+function saveLocalShops(map){
+  localStorage.setItem("od_shops_v1", JSON.stringify(map || {}));
+}
+function renderShopRows(map){
+  const box = $("shopListBox");
+  const sel = $("nullShopSelect");
+  if (sel) sel.innerHTML = '<option value="">— Select shop —</option>';
+  if (box) box.innerHTML = "";
+  const rows = Object.keys(map || {}).map(id => ({ id, name: (map[id]&&map[id].name)||"", phone: (map[id]&&map[id].phone)||"" }));
+  rows.sort((a,b) => a.name.localeCompare(b.name));
+  if (!rows.length) {
+    if (box) box.innerHTML = '<span style="color:#94a3b8">No shops yet. Add name + number above.</span>';
+    return;
+  }
+  rows.forEach(o => {
+    if (sel) {
+      const opt = document.createElement("option");
+      opt.value = JSON.stringify({ id: o.id, name: o.name, phone: o.phone });
+      opt.textContent = o.name + " · " + o.phone;
+      sel.appendChild(opt);
+    }
+    if (box) {
+      const div = document.createElement("div");
+      div.style.cssText = "display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 4px;border-bottom:1px solid #334155";
+      const span = document.createElement("span");
+      span.innerHTML = "<b>" + esc(o.name) + "</b><br/><span style=\"color:#94a3b8\">" + esc(o.phone) + "</span>";
+      const del = document.createElement("button");
+      del.className = "secondary sm";
+      del.textContent = "Remove";
+      del.onclick = () => removeShop(o.id);
+      div.appendChild(span);
+      div.appendChild(del);
+      box.appendChild(div);
+    }
+  });
+}
 async function loadShopList(){
+  let map = localShops();
   try {
     const r = await fetch(DB + SHOP_PATH + ".json?t=" + Date.now());
-    const j = r.ok ? await r.json() : null;
-    const box = $("shopListBox");
-    const sel = $("nullShopSelect");
-    if (sel) {
-      sel.innerHTML = '<option value="">— Select shop —</option>';
-    }
-    if (box) box.innerHTML = "";
-    if (!j) {
-      if (box) box.innerHTML = '<span style="color:#94a3b8">No shops saved yet.</span>';
-      return;
-    }
-    const rows = [];
-    Object.keys(j).forEach(id => {
-      const o = j[id];
-      if (!o) return;
-      rows.push({ id, name: o.name || "", phone: o.phone || "" });
-    });
-    rows.sort((a,b) => a.name.localeCompare(b.name));
-    rows.forEach(o => {
-      if (sel) {
-        const opt = document.createElement("option");
-        opt.value = JSON.stringify({ id: o.id, name: o.name, phone: o.phone });
-        opt.textContent = o.name + " · " + o.phone;
-        sel.appendChild(opt);
+    if (r.ok) {
+      const j = await r.json();
+      if (j && typeof j === "object") {
+        map = Object.assign({}, map, j);
+        saveLocalShops(map);
       }
-      if (box) {
-        const div = document.createElement("div");
-        div.style.cssText = "display:flex;justify-content:space-between;gap:8px;padding:6px 0;border-bottom:1px solid #334155";
-        div.innerHTML = "<span><b>" + esc(o.name) + "</b> · " + esc(o.phone) + "</span>";
-        const del = document.createElement("button");
-        del.className = "secondary sm";
-        del.textContent = "Remove";
-        del.onclick = () => removeShop(o.id);
-        div.appendChild(del);
-        box.appendChild(div);
-      }
-    });
+    }
   } catch (e) {
-    if ($("shopListBox")) $("shopListBox").textContent = "Load error: " + e.message;
+    console.warn("shop online load", e);
   }
+  renderShopRows(map);
 }
 
 async function addShopToList(){
@@ -1647,30 +1688,34 @@ async function addShopToList(){
   const phone = ($("listShopPhone").value || "").trim();
   if (!name || !phone) return popup("Required", "Enter shop name and number.");
   const id = "s_" + Date.now() + "_" + Math.random().toString(36).slice(2,6);
+  const row = { name, phone, createdAt: Date.now() };
+  const map = localShops();
+  map[id] = row;
+  saveLocalShops(map);
+  renderShopRows(map);
+  $("listShopName").value = "";
+  $("listShopPhone").value = "";
   try {
-    const r = await fetch(DB + SHOP_PATH + "/" + encodeURIComponent(id) + ".json", {
+    await fetch(DB + SHOP_PATH + "/" + encodeURIComponent(id) + ".json", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, phone, createdAt: Date.now() })
+      body: JSON.stringify(row)
     });
-    if (!r.ok) throw new Error("HTTP " + r.status);
-    $("listShopName").value = "";
-    $("listShopPhone").value = "";
-    await loadShopList();
-    setStatus("Shop saved: " + name);
-  } catch (e) {
-    popup("Failed", String(e.message || e));
-  }
+  } catch (e) { console.warn(e); }
+  setStatus("Shop saved: " + name);
+  updateNullPreview();
 }
 
 async function removeShop(id){
   if (!confirm("Remove this shop from list?")) return;
+  const map = localShops();
+  delete map[id];
+  saveLocalShops(map);
+  renderShopRows(map);
   try {
     await fetch(DB + SHOP_PATH + "/" + encodeURIComponent(id) + ".json", { method: "DELETE" });
-    await loadShopList();
-  } catch (e) {
-    popup("Failed", String(e.message || e));
-  }
+  } catch (e) { console.warn(e); }
+  updateNullPreview();
 }
 
 async function sendNullNotify(){
@@ -1682,7 +1727,7 @@ async function sendNullNotify(){
   }
   const shop = (shopObj.name || "").trim();
   const phone = (shopObj.phone || "").trim();
-  const type = ($("nullMsgType") && $("nullMsgType").value) || "null_bakery";
+  const type = currentMsgType();
   let message = msgTemplate(type, shop);
   if ($("nullShopMsg") && $("nullShopMsg").value.trim()) message = $("nullShopMsg").value.trim();
   // ensure shop mentioned at end
@@ -1724,10 +1769,10 @@ ensureDayLocal();
 loadDayOnline();
 
 document.addEventListener("DOMContentLoaded", function(){
-  var a = document.getElementById("nullShopSelect");
-  var b = document.getElementById("nullMsgType");
-  if (a) a.addEventListener("change", updateNullPreview);
-  if (b) b.addEventListener("change", updateNullPreview);
+  ["nullShopSelect","nullAction","nullKind"].forEach(function(id){
+    var el = document.getElementById(id);
+    if (el) el.addEventListener("change", updateNullPreview);
+  });
 });
 </script>
 </body>
