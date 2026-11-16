@@ -1556,20 +1556,137 @@ function exportDay(){
 }
 
 
+
+const SHOP_PATH = "/orderdesk_shops";
+const NULL_PATH = "/orderdesk_null_notify";
+
+function msgTemplate(type, shopName){
+  const s = shopName || "Shop";
+  if (type === "null_bakery") {
+    return "Assalam-o-Alaikum, Dear " + s + ", aap ki bakery ki demand null kar di gayi hai. Mazeed maloomat ke liye WhatsApp ya call karein: 03257436319\n\nShop: " + s;
+  }
+  if (type === "null_sweet") {
+    return "Assalam-o-Alaikum, Dear " + s + ", aap ki sweet ki demand null kar di gayi hai. Mazeed maloomat ke liye WhatsApp ya call karein: 03257436319\n\nShop: " + s;
+  }
+  if (type === "ok_bakery") {
+    return "Assalamu Alaikum! Dear " + s + ", aap ki bakery ki demand kamyabi ke sath add ho chuki hai. 📦✅\n\nShop: " + s;
+  }
+  if (type === "ok_sweet") {
+    return "Assalamu Alaikum! Dear " + s + ", aap ki sweet ki demand kamyabi ke sath add ho chuki hai. 🍬✅\n\nShop: " + s;
+  }
+  return "";
+}
+
 function openNullShopNotify(){
   $("nullModal").classList.add("show");
   $("nullStatus").textContent = "";
+  loadShopList().then(() => updateNullPreview());
 }
 function closeNullModal(){ $("nullModal").classList.remove("show"); }
-async function sendNullNotify(){
-  const shop = ($("nullShopName").value || "").trim();
-  const phone = ($("nullShopPhone").value || "").trim();
-  let message = ($("nullShopMsg").value || "").trim();
-  if (!shop) return popup("Required", "Please enter shop name.");
-  if (!phone) return popup("Required", "Please enter shop WhatsApp number.");
-  if (!message) {
-    message = "Assalam o Alaikum.\n\nAap ki aaj ki demand NULL / cancel mark kar di gai hai.\n\nMazeed tafseel ke liye WhatsApp ya Call par rabta karein.\n\n— Hafiz Sweets / MrCrazy Ai Order";
+
+function updateNullPreview(){
+  const sel = $("nullShopSelect");
+  const type = ($("nullMsgType") && $("nullMsgType").value) || "null_bakery";
+  let shop = "";
+  if (sel && sel.value) {
+    try {
+      const o = JSON.parse(sel.value);
+      shop = o.name || "";
+    } catch(e) {}
   }
+  if ($("nullShopMsg")) $("nullShopMsg").value = msgTemplate(type, shop || "[Shop Name]");
+}
+
+async function loadShopList(){
+  try {
+    const r = await fetch(DB + SHOP_PATH + ".json?t=" + Date.now());
+    const j = r.ok ? await r.json() : null;
+    const box = $("shopListBox");
+    const sel = $("nullShopSelect");
+    if (sel) {
+      sel.innerHTML = '<option value="">— Select shop —</option>';
+    }
+    if (box) box.innerHTML = "";
+    if (!j) {
+      if (box) box.innerHTML = '<span style="color:#94a3b8">No shops saved yet.</span>';
+      return;
+    }
+    const rows = [];
+    Object.keys(j).forEach(id => {
+      const o = j[id];
+      if (!o) return;
+      rows.push({ id, name: o.name || "", phone: o.phone || "" });
+    });
+    rows.sort((a,b) => a.name.localeCompare(b.name));
+    rows.forEach(o => {
+      if (sel) {
+        const opt = document.createElement("option");
+        opt.value = JSON.stringify({ id: o.id, name: o.name, phone: o.phone });
+        opt.textContent = o.name + " · " + o.phone;
+        sel.appendChild(opt);
+      }
+      if (box) {
+        const div = document.createElement("div");
+        div.style.cssText = "display:flex;justify-content:space-between;gap:8px;padding:6px 0;border-bottom:1px solid #334155";
+        div.innerHTML = "<span><b>" + esc(o.name) + "</b> · " + esc(o.phone) + "</span>";
+        const del = document.createElement("button");
+        del.className = "secondary sm";
+        del.textContent = "Remove";
+        del.onclick = () => removeShop(o.id);
+        div.appendChild(del);
+        box.appendChild(div);
+      }
+    });
+  } catch (e) {
+    if ($("shopListBox")) $("shopListBox").textContent = "Load error: " + e.message;
+  }
+}
+
+async function addShopToList(){
+  const name = ($("listShopName").value || "").trim();
+  const phone = ($("listShopPhone").value || "").trim();
+  if (!name || !phone) return popup("Required", "Enter shop name and number.");
+  const id = "s_" + Date.now() + "_" + Math.random().toString(36).slice(2,6);
+  try {
+    const r = await fetch(DB + SHOP_PATH + "/" + encodeURIComponent(id) + ".json", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, phone, createdAt: Date.now() })
+    });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    $("listShopName").value = "";
+    $("listShopPhone").value = "";
+    await loadShopList();
+    setStatus("Shop saved: " + name);
+  } catch (e) {
+    popup("Failed", String(e.message || e));
+  }
+}
+
+async function removeShop(id){
+  if (!confirm("Remove this shop from list?")) return;
+  try {
+    await fetch(DB + SHOP_PATH + "/" + encodeURIComponent(id) + ".json", { method: "DELETE" });
+    await loadShopList();
+  } catch (e) {
+    popup("Failed", String(e.message || e));
+  }
+}
+
+async function sendNullNotify(){
+  const sel = $("nullShopSelect");
+  if (!sel || !sel.value) return popup("Required", "Select a shop from the list.");
+  let shopObj;
+  try { shopObj = JSON.parse(sel.value); } catch(e) {
+    return popup("Error", "Invalid shop selection.");
+  }
+  const shop = (shopObj.name || "").trim();
+  const phone = (shopObj.phone || "").trim();
+  const type = ($("nullMsgType") && $("nullMsgType").value) || "null_bakery";
+  let message = msgTemplate(type, shop);
+  if ($("nullShopMsg") && $("nullShopMsg").value.trim()) message = $("nullShopMsg").value.trim();
+  // ensure shop mentioned at end
+  if (shop && message.indexOf(shop) < 0) message += "\n\nShop: " + shop;
   $("nullStatus").textContent = "Sending…";
   try {
     const id = "n_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7);
@@ -1577,24 +1694,27 @@ async function sendNullNotify(){
       shop: shop,
       phone: phone,
       message: message,
+      msgType: type,
       status: "pending",
       createdAt: Date.now(),
       day: day || todayStr()
     };
-    const r = await fetch(DB + "/orderdesk_null_notify/" + encodeURIComponent(id) + ".json", {
+    const r = await fetch(DB + NULL_PATH + "/" + encodeURIComponent(id) + ".json", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body)
     });
     if (!r.ok) throw new Error("HTTP " + r.status);
-    $("nullStatus").textContent = "Sent to server · mobile app will send SMS";
-    pushAudit("NULL_NOTIFY", shop + " · " + phone);
-    setTimeout(() => { closeNullModal(); popup("Queued", "Null SMS job queued for " + shop); }, 400);
+    $("nullStatus").textContent = "Queued · mobile will SMS when online";
+    pushAudit("SMS_JOB", type + " · " + shop + " · " + phone);
+    setTimeout(() => { closeNullModal(); popup("Queued", "SMS job queued for " + shop + ". Mobile will send when phone is on."); }, 350);
   } catch (e) {
     $("nullStatus").textContent = "Error";
     popup("Failed", String(e.message || e));
   }
 }
+
+
 
 ensureDayLocal();
 (function(){
@@ -1602,6 +1722,13 @@ ensureDayLocal();
   if (sel) sel.value = localStorage.getItem("od_orient") || "landscape";
 })();
 loadDayOnline();
+
+document.addEventListener("DOMContentLoaded", function(){
+  var a = document.getElementById("nullShopSelect");
+  var b = document.getElementById("nullMsgType");
+  if (a) a.addEventListener("change", updateNullPreview);
+  if (b) b.addEventListener("change", updateNullPreview);
+});
 </script>
 </body>
 </html>
