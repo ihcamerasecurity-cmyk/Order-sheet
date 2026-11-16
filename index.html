@@ -505,6 +505,12 @@
       <option value="sweet">Sweet</option>
     </select>
 
+    <label>Send via</label>
+    <select id="nullChannel">
+      <option value="sms">Simple SMS (background)</option>
+      <option value="whatsapp">WhatsApp Business</option>
+    </select>
+
     <label>Message preview</label>
     <textarea id="nullShopMsg" style="min-height:110px"></textarea>
 
@@ -513,6 +519,10 @@
       <button type="button" onclick="sendNullNotify()">Send notification</button>
     </div>
     <div class="status" id="nullStatus" style="margin-top:8px"></div>
+    <hr style="border:0;border-top:1px solid var(--line);margin:12px 0"/>
+    <label>Recent jobs status</label>
+    <div id="jobStatusBox" style="max-height:160px;overflow:auto;font-size:.78rem;border:1px solid var(--line);border-radius:10px;padding:8px;background:#0f1726"></div>
+    <button type="button" class="secondary" style="margin-top:8px" onclick="loadJobStatus()">Refresh status</button>
   </div>
 </div>
 
@@ -1601,10 +1611,33 @@ function msgTemplate(type, shopName){
   return "";
 }
 
+async function loadJobStatus(){
+  const box = $("jobStatusBox");
+  if (!box) return;
+  box.innerHTML = "Loading…";
+  try {
+    const r = await fetch(DB + NULL_PATH + ".json?t=" + Date.now());
+    const j = r.ok ? await r.json() : null;
+    if (!j) { box.innerHTML = "<span style=\"color:#94a3b8\">No jobs yet.</span>"; return; }
+    const rows = Object.keys(j).map(id => Object.assign({id}, j[id] || {}));
+    rows.sort((a,b) => (b.createdAt||0) - (a.createdAt||0));
+    box.innerHTML = rows.slice(0, 30).map(o => {
+      const st = (o.status || "pending");
+      const color = st === "sent" ? "#4ade80" : st === "error" ? "#f87171" : "#fbbf24";
+      const err = o.error ? (" · " + o.error) : "";
+      return "<div style=\"padding:6px 0;border-bottom:1px solid #334155\">"
+        + "<b style=\"color:"+color+"\">" + esc(st.toUpperCase()) + "</b> · "
+        + esc(o.shop||"") + " · " + esc(o.phone||"") + "<br/>"
+        + "<span style=\"color:#94a3b8\">" + esc(o.channel||"") + " · " + esc(o.msgType||"") + esc(err) + "</span></div>";
+    }).join("") || "<span style=\"color:#94a3b8\">No jobs.</span>";
+  } catch (e) {
+    box.innerHTML = "Error: " + esc(e.message || String(e));
+  }
+}
 function openNullShopNotify(){
   $("nullModal").classList.add("show");
   $("nullStatus").textContent = "";
-  loadShopList().then(() => updateNullPreview());
+  loadShopList().then(() => { updateNullPreview(); loadJobStatus(); });
 }
 function closeNullModal(){ $("nullModal").classList.remove("show"); }
 
@@ -1683,10 +1716,25 @@ async function loadShopList(){
   renderShopRows(map);
 }
 
+function normalizePhone92(phone){
+  let d = String(phone || "").trim().replace(/[\s-]/g, "");
+  if (d.startsWith("+")) d = d.slice(1);
+  d = d.replace(/[^0-9]/g, "");
+  if (d.startsWith("00")) d = d.slice(2);
+  if (d.length === 10 && d.startsWith("3")) d = "92" + d;
+  if (d.length === 11 && d.startsWith("03")) d = "92" + d.slice(1);
+  if (d.length === 12 && d.startsWith("92")) return "+" + d;
+  if (d.length >= 11) return "+" + d;
+  return "";
+}
 async function addShopToList(){
   const name = ($("listShopName").value || "").trim();
-  const phone = ($("listShopPhone").value || "").trim();
+  let phone = ($("listShopPhone").value || "").trim();
   if (!name || !phone) return popup("Required", "Enter shop name and number.");
+  phone = normalizePhone92(phone);
+  if (!phone || !phone.startsWith("+92") || phone.length < 12) {
+    return popup("Invalid number", "Number +92 se start hona chahiye (e.g. +923001234567).");
+  }
   const id = "s_" + Date.now() + "_" + Math.random().toString(36).slice(2,6);
   const row = { name, phone, createdAt: Date.now() };
   const map = localShops();
@@ -1735,11 +1783,13 @@ async function sendNullNotify(){
   $("nullStatus").textContent = "Sending…";
   try {
     const id = "n_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7);
+    const channel = ($("nullChannel") && $("nullChannel").value) || "sms";
     const body = {
       shop: shop,
-      phone: phone,
+      phone: normalizePhone92(phone) || phone,
       message: message,
       msgType: type,
+      channel: channel,
       status: "pending",
       createdAt: Date.now(),
       day: day || todayStr()
