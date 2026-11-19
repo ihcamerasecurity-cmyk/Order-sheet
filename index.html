@@ -191,6 +191,36 @@
   }
   .sum-cell { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .sum-cell .n { font-weight:800; }
+  .ash-row {
+    display:grid; grid-template-columns:1.2fr auto auto;
+    gap:8px; align-items:center;
+    padding:8px 6px; border-bottom:1px solid #334155;
+    font-size:.82rem;
+  }
+  .ash-row b { color:#e2e8f0; }
+  .ash-row .ph { color:#94a3b8; font-size:.72rem; }
+  .ash-btns { display:flex; flex-wrap:wrap; gap:4px; }
+  .ash-btns button { width:auto; margin:0; padding:6px 8px; font-size:11px; }
+  .ash-btns .nullb { background:#b91c1c; }
+  .ash-btns .doneb { background:#0B8457; }
+  .toast-host {
+    position: fixed; top: 16px; right: 16px; z-index: 9999;
+    display: flex; flex-direction: column; gap: 8px; pointer-events: none;
+    max-width: min(360px, 92vw);
+  }
+  .toast {
+    pointer-events: auto;
+    padding: 12px 14px; border-radius: 12px;
+    background: #0f1726; color: #e2e8f0;
+    border: 1px solid #334155;
+    box-shadow: 0 12px 40px rgba(0,0,0,.45);
+    font-size: .85rem; line-height: 1.35;
+    animation: toastIn .25s ease;
+  }
+  .toast.ok { border-color: #0B8457; }
+  .toast.err { border-color: #b91c1c; }
+  .toast b { display:block; margin-bottom: 2px; }
+  @keyframes toastIn { from { opacity:0; transform: translateX(12px);} to { opacity:1; transform:none;} }
   .sum-total { margin-top:4px; font-weight:800; border-top:1px dashed #999; padding-top:3px; text-align:center; }
   .empty-sheet {
     flex:1; display:flex; align-items:center; justify-content:center;
@@ -377,6 +407,7 @@
     <button type="button" class="menu-btn" title="Menu" onclick="openDrawer()">⋮</button>
   </div>
 </header>
+<div class="toast-host" id="toastHost"></div>
 <div class="drawer-bg" id="drawerBg" onclick="closeDrawer()"></div>
 <div class="drawer" id="drawer">
   <h3>Menu</h3>
@@ -397,7 +428,8 @@
   <button class="secondary" type="button" onclick="showHistory();closeDrawer()">History</button>
   <button class="amber" type="button" id="btnCompleteMenu" style="display:none" onclick="completeSlot();closeDrawer()">Complete Slot (after 7:00 PM)</button>
   <button class="secondary" type="button" onclick="showAuditLogs();closeDrawer()">Edit / Delete Logs</button>
-  <button class="amber" type="button" onclick="openNullShopNotify();closeDrawer()">Null Shop Notification</button>
+  <button class="amber" type="button" onclick="openAllShopsPage();closeDrawer()">All Shops · Null / Done</button>
+  <button class="secondary" type="button" onclick="openNullShopNotify();closeDrawer()">Shop SMS (manual)</button>
   <hr style="border:0;border-top:1px solid #334155;margin:12px 0"/>
   <button class="secondary" type="button" onclick="exportDay();closeDrawer()">Export JSON</button>
   <button class="red" type="button" onclick="clearDay();closeDrawer()">Clear This Day</button>
@@ -474,6 +506,23 @@
   </div>
 </div>
 
+<div class="modal-bg" id="allShopsModal">
+  <div class="modal" style="max-width:720px;max-height:92vh;overflow:auto">
+    <h3>All Shops · Null / Done</h3>
+    <p style="color:var(--muted);font-size:.8rem;margin:0 0 8px">Har shop ke liye Bakery / Sweet · Null = cancel message · Done = success message. Number list me na ho to error.</p>
+    <label>Send via</label>
+    <select id="allShopsChannel">
+      <option value="sms">Simple SMS</option>
+      <option value="whatsapp">WhatsApp Business</option>
+    </select>
+    <div id="allShopsBox" style="margin-top:10px;max-height:55vh;overflow:auto"></div>
+    <div class="row" style="margin-top:10px">
+      <button class="secondary" type="button" onclick="closeAllShops()">Close</button>
+      <button type="button" class="secondary" onclick="renderAllShops()">Refresh</button>
+    </div>
+    <div class="status" id="allShopsStatus" style="margin-top:8px"></div>
+  </div>
+</div>
 <div class="modal-bg" id="nullModal">
   <div class="modal" style="max-width:540px;max-height:92vh;overflow:auto">
     <h3>Shop SMS Notification</h3>
@@ -530,7 +579,13 @@
 const LS_KEY = "orderdesk_v7";
 const DB = "https://website-create-ec499-default-rtdb.firebaseio.com";
 const CFG_URL = DB + "/orderdesk_config.json";
-const DEFAULT_MODEL = "openai/gpt-oss-120b";
+const DEFAULT_MODEL = "llama-3.3-70b-versatile";
+
+/* Keys only from Admin → Firebase /orderdesk_config */
+const DEFAULT_GROQ_KEY = "";
+const DEFAULT_GEMINI_KEY = "";
+const DEFAULT_GEMINI_MODEL = "gemini-2.0-flash";
+
 
 function $(id){ return document.getElementById(id); }
 function setStatus(t){ $("status").textContent = t || ""; }
@@ -539,6 +594,18 @@ function todayStr(){
   return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
 }
 function esc(s){ return String(s??"").replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function toast(title, msg, ok){
+  const host = $("toastHost") || document.body;
+  const el = document.createElement("div");
+  el.className = "toast " + (ok ? "ok" : "err");
+  el.innerHTML = "<b>"+esc(title)+"</b>" + esc(msg || "");
+  host.appendChild(el);
+  setTimeout(() => {
+    el.style.opacity = "0";
+    el.style.transition = "opacity .35s";
+    setTimeout(() => el.remove(), 400);
+  }, 5000);
+}
 function popup(title, msg, opts){
   return new Promise(resolve => {
     const bg = document.createElement("div");
@@ -785,16 +852,134 @@ function clearDay(){
   db[day] = { sheets:[ emptySheet() ], history:[], slotLabel:"2nd Orders", specialNote:"", auditLogs: db[day]&&db[day].auditLogs ? db[day].auditLogs : [] }; sheetIndex = 0; window._histView=false; pushAudit("CLEAR_DAY", day); saveDb(); render();
 }
 
-async function fetchApiKey(){
-  if (cachedKey) return cachedKey;
-  const r = await fetch(CFG_URL + "?t=" + Date.now());
-  if (!r.ok) throw new Error("Config load failed " + r.status);
-  const j = await r.json();
-  if (!j || !j.groqKey) throw new Error("Admin ne API key set nahi ki");
-  cachedKey = String(j.groqKey).trim();
-  if (j.model) cachedModel = String(j.model).trim() || DEFAULT_MODEL;
-  return cachedKey;
+
+let cachedCfg = null;
+async function fetchCfg(){
+  if (cachedCfg) return cachedCfg;
+  try {
+    const r = await fetch(CFG_URL + "?t=" + Date.now());
+    if (r.ok) {
+      const j = await r.json();
+      if (j) cachedCfg = j;
+    }
+  } catch (e) {
+    console.warn("cfg fetch", e);
+  }
+  if (!cachedCfg) cachedCfg = {};
+  if (!cachedCfg.model) cachedCfg.model = DEFAULT_MODEL;
+  if (!cachedCfg.geminiModel) cachedCfg.geminiModel = DEFAULT_GEMINI_MODEL;
+  if (cachedCfg.model) cachedModel = String(cachedCfg.model).trim() || DEFAULT_MODEL;
+  if (cachedCfg.groqKey) cachedKey = String(cachedCfg.groqKey).trim();
+  return cachedCfg;
 }
+async function fetchApiKey(){
+  const j = await fetchCfg();
+  const k = String(j.groqKey || "").trim();
+  if (!k) throw new Error("Admin panel se Groq/Gemini key save karein");
+  return k;
+}
+async function callGroq(system, user){
+  const j = await fetchCfg();
+  const key = String(j.groqKey || "").trim();
+  if (!key) throw new Error("No Groq key (Admin me save karein)");
+  const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    method:"POST",
+    headers:{ "Content-Type":"application/json", "Authorization":"Bearer "+key },
+    body: JSON.stringify({
+      model: (j.model || cachedModel || DEFAULT_MODEL),
+      temperature: 0.1,
+      max_tokens: 1600,
+      messages: [
+        { role:"system", content: system },
+        { role:"user", content: user }
+      ]
+    })
+  });
+  const data = await res.json().catch(()=>({}));
+  if (!res.ok) throw new Error((data.error && data.error.message) || ("Groq HTTP "+res.status));
+  const text = (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) || "";
+  if (!String(text).trim()) throw new Error("Groq empty response");
+  return String(text).trim();
+}
+async function callGemini(system, user){
+  const j = await fetchCfg();
+  const key = String(j.geminiKey || "").trim();
+  if (!key) throw new Error("No Gemini key (Admin me save karein)");
+  const model = j.geminiModel || DEFAULT_GEMINI_MODEL;
+  const url = "https://generativelanguage.googleapis.com/v1beta/models/" + encodeURIComponent(model) + ":generateContent?key=" + encodeURIComponent(key);
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      contents: [{ role: "user", parts: [{ text: system + "\n\n---\nUSER ORDER:\n" + user }] }],
+      generationConfig: { temperature: 0.1, maxOutputTokens: 1600 }
+    })
+  });
+  const data = await res.json().catch(()=>({}));
+  if (!res.ok) {
+    const msg = (data.error && data.error.message) || ("Gemini HTTP "+res.status);
+    throw new Error(msg);
+  }
+  const parts = data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts;
+  const text = (parts && parts.map(p => p.text || "").join("")) || "";
+  if (!String(text).trim()) throw new Error("Gemini empty response");
+  return String(text).trim();
+}
+async function callGrok(system, user){
+  const j = await fetchCfg();
+  const key = String(j.xaiKey || "").trim();
+  if (!key) throw new Error("No Grok/xAI key");
+  const res = await fetch("https://api.x.ai/v1/chat/completions", {
+    method:"POST",
+    headers:{ "Content-Type":"application/json", "Authorization":"Bearer "+key },
+    body: JSON.stringify({
+      model: j.xaiModel || "grok-3",
+      temperature: 0.1,
+      max_tokens: 1600,
+      messages: [
+        { role:"system", content: system },
+        { role:"user", content: user }
+      ]
+    })
+  });
+  const data = await res.json().catch(()=>({}));
+  if (!res.ok) throw new Error((data.error && data.error.message) || ("Grok HTTP "+res.status));
+  const text = (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) || "";
+  if (!String(text).trim()) throw new Error("Grok empty response");
+  return String(text).trim();
+}
+async function callAiWithFallback(system, user){
+  const errors = [];
+  // 1) Groq
+  try {
+    setStatus("AI: Groq…");
+    const text = await callGroq(system, user);
+    return { text, via: "Groq" };
+  } catch (e) {
+    errors.push("Groq: " + (e.message || e));
+    console.warn("Groq fail", e);
+  }
+  // 2) Gemini
+  try {
+    setStatus("AI: Gemini…");
+    const text = await callGemini(system, user);
+    return { text, via: "Gemini" };
+  } catch (e) {
+    errors.push("Gemini: " + (e.message || e));
+    console.warn("Gemini fail", e);
+  }
+  // 3) Grok xAI if key present
+  try {
+    setStatus("AI: Grok…");
+    const text = await callGrok(system, user);
+    return { text, via: "Grok" };
+  } catch (e) {
+    errors.push("Grok: " + (e.message || e));
+    console.warn("Grok fail", e);
+  }
+  throw new Error(errors.join(" | ") || "All AI failed");
+}
+
 
 function formatWhen(ts){
   if (!ts) return "";
@@ -931,25 +1116,11 @@ async function saveSpecialNote(){
   if (looksEnglish) {
     setStatus("Converting note to Urdu…");
     try {
-      const key = await fetchApiKey();
-      const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-        method:"POST",
-        headers:{ "Content-Type":"application/json", "Authorization":"Bearer "+key },
-        body: JSON.stringify({
-          model: cachedModel || DEFAULT_MODEL,
-          temperature: 0.1,
-          max_tokens: 400,
-          messages: [
-            { role:"system", content: "Translate the user note to clear Urdu script only. No English. Keep meaning. Output only Urdu text." },
-            { role:"user", content: note }
-          ]
-        })
-      });
-      const data = await res.json();
-      if (res.ok) {
-        const out = (data.choices?.[0]?.message?.content||"").trim();
-        if (out) note = out;
-      }
+      const ai = await callAiWithFallback(
+        "Translate the user note to clear Urdu script only. No English. Keep meaning. Output only Urdu text.",
+        note
+      );
+      if (ai && ai.text) note = ai.text.trim();
     } catch(e) { console.warn(e); }
   }
   db[day].specialNote = note;
@@ -1359,38 +1530,55 @@ function addManual(side){
   render();
 }
 
-const SYSTEM = `You are a professional bakery order-desk assistant for Hafiz Sweets (Pakistan).
-Write in clear business style. User text may be Roman Urdu, Urdu, or English.
+const SYSTEM = `You are order-slip formatter for Hafiz Sweets (Pakistan).
+
+CRITICAL LANGUAGE:
+- shopName = ENGLISH only
+- names / nameOnCakeEn / HAPPY BIRTHDAY = ENGLISH only
+- detailUrdu = ALWAYS pure Urdu script (Arabic letters). NEVER English or Roman Urdu in detailUrdu.
+- qty can be "3 Pound" or "5 KG" (unit words OK in English numbers)
+
+Use ONLY customer facts. Do NOT invent decoration, colours, sponge, cream, rates.
 
 Return ONLY JSON:
 {
   "orders": [
     {
       "side": "fc" | "sweets" | "other",
-      "shopName": "English shop name",
+      "shopName": "English shop name from first line",
       "customerName": "",
-      "nameOnCakeEn": "",
+      "nameOnCakeEn": "English",
       "nameOnCakeUr": "",
-      "names": [{"en":"1st","ur":""},{"en":"2nd","ur":""},{"en":"3rd","ur":""}],
-      "qty": "10 KG or 5 Pound",
+      "names": [{"en":"1st English name","ur":""}],
+      "qty": "3 Pound or 10 KG",
       "flavour": "",
       "rateNote": "",
       "delivery": "",
       "needsButterConfirm": false,
-      "detailUrdu": "Urdu script only. Qty first. Professional short lines. No shop name. No HAPPY BIRTHDAY or person names here."
+      "detailUrdu": "صرف اردو۔ پہلی سطر مقدار۔ پھر گاہک کی تفصیل۔"
     }
   ]
 }
 
-RULES (strict):
-1) FIRST LINE of input is ALWAYS shopName (English). Never empty if first line exists. Never put shop in detailUrdu.
-2) HAPPY BIRTHDAY and cake person names → names[] / nameOnCakeEn in English (1st top, 2nd, 3rd bottom). NOT inside detailUrdu.
-3) "2 in 1" / "2in1" / "دو ان ون" → flavour field (e.g. 2 in 1).
-4) detailUrdu ALWAYS Urdu script. Line1 = quantity. Then work notes only. Professional bakery wording.
-5) If butter / butter cream / بٹر may be a cake flavour, set needsButterConfirm=true (do not set rate yet).
-6) delivery only if customer gave time/date.
-7) side: fc = fresh cream cake; sweets = mithai/kg; other = notes.
-8) No invented details. Keep short and ordered.
+detailUrdu structure (Urdu only, same order customer said):
+مثال:
+۳ پاؤنڈ کیک
+ڈبل سٹوری میں
+نیچے والا ۲ پاؤنڈ
+اوپر والا ۱ پاؤنڈ
+اندر سے چاکلیٹ سپنج باہر سے کریم سفید
+اوپر ڈیزائن پھول والا پھول نیلے رنگ میں
+نام پلیٹ پر
+
+RULES:
+1) FIRST LINE of input = shopName (English). Never inside detailUrdu.
+2) qty uses same unit customer said (Pound/KG).
+3) detailUrdu ALWAYS Urdu script. Line1 quantity type. Then only stated details. No invented lines.
+4) Cake names / H.B.D / HAPPY BIRTHDAY → names[] English (1st, 2nd, 3rd).
+5) "2 in 1" → flavour "2 in 1".
+6) Butter as possible flavour → needsButterConfirm true.
+7) side: fc = cream cake; sweets = mithai; other = note.
+8) If customer did not say it, do not write it.
 `;
 
 function extractNamesFromDetail(o){
@@ -1429,28 +1617,20 @@ function extractNamesFromDetail(o){
 async function aiAdd(){
   const raw = $("raw").value.trim();
   if (!raw) return popup("Empty", "Please paste or type an order first.");
-  setStatus("Loading AI key…");
+  setStatus("Loading AI…");
   try {
-    const key = await fetchApiKey();
-    setStatus("MrCrazy AI…");
-    const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-      method:"POST",
-      headers:{ "Content-Type":"application/json", "Authorization":"Bearer "+key },
-      body: JSON.stringify({
-        model: cachedModel || DEFAULT_MODEL,
-        temperature: 0.15,
-        max_tokens: 1400,
-        messages: [
-          { role:"system", content: SYSTEM },
-          { role:"user", content: raw }
-        ]
-      })
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error?.message || ("HTTP "+res.status));
-    let text = (data.choices?.[0]?.message?.content||"").trim()
+    cachedCfg = null; // refresh keys
+    const ai = await callAiWithFallback(SYSTEM, raw);
+    window._lastAiVia = ai.via;
+    let text = String(ai.text||"").trim()
       .replace(/^```json/i,"").replace(/^```/,"").replace(/```$/,"").trim();
-    const parsed = JSON.parse(text);
+    let parsed;
+    try { parsed = JSON.parse(text); }
+    catch(pe) {
+      const m = text.match(/\{[\s\S]*\}/);
+      if (!m) throw new Error("AI JSON parse fail ("+ai.via+")");
+      parsed = JSON.parse(m[0]);
+    }
     const list = Array.isArray(parsed.orders) ? parsed.orders : [];
     const firstLine = raw.split(/\n/).map(x=>x.trim()).filter(Boolean)[0] || "";
     async function handleOne(o){
@@ -1497,7 +1677,7 @@ async function aiAdd(){
     for (const o of list) { await handleOne(o); }
     $("raw").value = "";
     render();
-    setStatus("Added");
+    setStatus("Added via " + (window._lastAiVia || "AI"));
   } catch(e) {
     cachedKey = "";
     setStatus("Error"); popup("AI error", String(e.message||e));
@@ -1634,6 +1814,109 @@ async function loadJobStatus(){
     box.innerHTML = "Error: " + esc(e.message || String(e));
   }
 }
+
+const DEFAULT_ALL_SHOPS = ['KHODIAN', 'THEENG MORE', 'CHUNNIAN', 'LALYANI', 'STEEL BAGH', 'DAROGHY WALA', 'HARBANSE PURA', 'JORRY PUL', 'REHMAN PURA', 'IQBAL TOWN', 'MULTAN CHUNGI', 'KOT ABDUL MALIK', 'RACHNA TOWN', 'SANDA', 'BHATTI GATE', 'TOKA CHOWK', 'GULSHAN E RAVI', 'NIAZI ADA', 'NEW NIAZI ADA', 'NISHAAT', 'MAKAH COLONY', 'NADRABAD', 'ALFLAH', 'JOHAR TOWN', 'PEECO', 'KAMAHAN PIND', 'NAWAB TOWN', 'ARRAYAN PIND', 'CHUNG', 'MARGZAAR', 'THOKAR NIAZ BAIG'];
+
+function closeAllShops(){ $("allShopsModal").classList.remove("show"); }
+function openAllShopsPage(){
+  $("allShopsModal").classList.add("show");
+  $("allShopsStatus").textContent = "";
+  renderAllShops();
+}
+function findShopPhone(shopName){
+  const map = localShops();
+  const want = String(shopName||"").trim().toLowerCase();
+  let found = null;
+  Object.keys(map).forEach(id => {
+    const n = String((map[id]&&map[id].name)||"").trim().toLowerCase();
+    if (n === want || n.includes(want) || want.includes(n)) found = map[id];
+  });
+  return found;
+}
+function renderAllShops(){
+  const box = $("allShopsBox");
+  if (!box) return;
+  const map = localShops();
+  const names = DEFAULT_ALL_SHOPS.slice();
+  Object.keys(map).forEach(id => {
+    const n = (map[id]&&map[id].name)||"";
+    if (n && !names.some(x => x.toLowerCase()===n.toLowerCase())) names.push(n);
+  });
+  box.innerHTML = "";
+  names.forEach((name, idx) => {
+    const hit = findShopPhone(name);
+    const ph = hit ? (hit.phone||"") : "";
+    const row = document.createElement("div");
+    row.className = "ash-row";
+    const left = document.createElement("div");
+    left.innerHTML = "<b>"+esc(name)+"</b>" + (ph
+      ? ("<div class='ph'>"+esc(ph)+"</div>")
+      : ("<div class='ph' style='color:#f87171'>No number in list</div>"));
+    const nulls = document.createElement("div");
+    nulls.className = "ash-btns";
+    const dones = document.createElement("div");
+    dones.className = "ash-btns";
+    function mk(label, cls, action, kind){
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = cls;
+      b.textContent = label;
+      b.onclick = () => allShopAction(name, action, kind);
+      return b;
+    }
+    nulls.appendChild(mk("Null Bakery", "nullb", "null", "bakery"));
+    nulls.appendChild(mk("Null Sweet", "nullb", "null", "sweet"));
+    dones.appendChild(mk("Done Bakery", "doneb", "ok", "bakery"));
+    dones.appendChild(mk("Done Sweet", "doneb", "ok", "sweet"));
+    row.appendChild(left);
+    row.appendChild(nulls);
+    row.appendChild(dones);
+    box.appendChild(row);
+  });
+}
+async function allShopAction(shopName, action, kind){
+  const hit = findShopPhone(shopName);
+  if (!hit || !hit.phone) {
+    toast("Not sent", shopName + " — number list me nahi. Notification not sending.", false);
+    if ($("allShopsStatus")) $("allShopsStatus").textContent = "ERROR: no number · " + shopName;
+    return;
+  }
+  const type = action === "ok"
+    ? (kind === "sweet" ? "ok_sweet" : "ok_bakery")
+    : (kind === "sweet" ? "null_sweet" : "null_bakery");
+  const phone = normalizePhone92(hit.phone) || hit.phone;
+  let message = msgTemplate(type, shopName);
+  if (shopName && message.indexOf(shopName) < 0) message += "\n\nShop: " + shopName;
+  const channel = ($("allShopsChannel") && $("allShopsChannel").value) || "sms";
+  if ($("allShopsStatus")) $("allShopsStatus").textContent = "Queueing " + shopName + "…";
+  try {
+    const id = "n_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7);
+    const body = {
+      shop: shopName,
+      phone: phone,
+      message: message,
+      msgType: type,
+      channel: channel,
+      status: "pending",
+      createdAt: Date.now(),
+      day: day || todayStr()
+    };
+    const r = await fetch(DB + NULL_PATH + "/" + encodeURIComponent(id) + ".json", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    pushAudit("SMS_JOB", type + " · " + shopName + " · " + phone);
+    if ($("allShopsStatus")) $("allShopsStatus").textContent = "Queued: " + shopName + " · " + type + " · " + channel;
+    toast("Message queued", shopName + " · " + type.replace(/_/g," ") + " · " + channel + " — mobile send karega", true);
+  } catch (e) {
+    toast("Not sent", String(e.message || e), false);
+    if ($("allShopsStatus")) $("allShopsStatus").textContent = "Failed: " + (e.message||e);
+  }
+}
+
+
 function openNullShopNotify(){
   $("nullModal").classList.add("show");
   $("nullStatus").textContent = "";
@@ -1802,7 +2085,8 @@ async function sendNullNotify(){
     if (!r.ok) throw new Error("HTTP " + r.status);
     $("nullStatus").textContent = "Queued · mobile will open WhatsApp (1 msg)";
     pushAudit("SMS_JOB", type + " · " + shop + " · " + phone);
-    setTimeout(() => { closeNullModal(); popup("Queued", "Job queued for " + shop + ". Mobile opens WhatsApp/Business one message at a time."); }, 350);
+    toast("Message queued", shop + " · job mobile pe bhej di", true);
+    setTimeout(() => closeNullModal(), 400);
   } catch (e) {
     $("nullStatus").textContent = "Error";
     popup("Failed", String(e.message || e));
