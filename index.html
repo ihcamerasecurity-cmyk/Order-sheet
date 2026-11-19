@@ -579,7 +579,7 @@
 const LS_KEY = "orderdesk_v7";
 const DB = "https://website-create-ec499-default-rtdb.firebaseio.com";
 const CFG_URL = DB + "/orderdesk_config.json";
-const DEFAULT_MODEL = "llama-3.3-70b-versatile";
+const DEFAULT_MODEL = "llama-3.1-8b-instant";
 
 /* Keys only from Admin → Firebase /orderdesk_config */
 const DEFAULT_GROQ_KEY = "";
@@ -950,35 +950,58 @@ async function callGrok(system, user){
 }
 async function callAiWithFallback(system, user){
   const errors = [];
-  // 1) Groq
-  try {
-    setStatus("AI: Groq…");
-    const text = await callGroq(system, user);
-    return { text, via: "Groq" };
-  } catch (e) {
-    errors.push("Groq: " + (e.message || e));
-    console.warn("Groq fail", e);
+  const j = await fetchCfg();
+  // Prefer admin model, then known working Groq free-tier models
+  const models = [];
+  const pref = (j.model || cachedModel || DEFAULT_MODEL || "").trim();
+  if (pref) models.push(pref);
+  ["llama-3.1-8b-instant","gemma2-9b-it","llama-3.3-70b-versatile","llama3-8b-8192"].forEach(m => {
+    if (models.indexOf(m) < 0) models.push(m);
+  });
+
+  for (const model of models) {
+    try {
+      setStatus("AI: Groq · " + model + "…");
+      const key = String(j.groqKey || "").trim();
+      if (!key) throw new Error("No Groq key (Admin me save karein)");
+      const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method:"POST",
+        headers:{ "Content-Type":"application/json", "Authorization":"Bearer "+key },
+        body: JSON.stringify({
+          model: model,
+          temperature: 0.1,
+          max_tokens: 1600,
+          messages: [
+            { role:"system", content: system },
+            { role:"user", content: user }
+          ]
+        })
+      });
+      const data = await res.json().catch(()=>({}));
+      if (!res.ok) throw new Error((data.error && data.error.message) || ("HTTP "+res.status));
+      const text = (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) || "";
+      if (!String(text).trim()) throw new Error("empty response");
+      cachedModel = model;
+      return { text: String(text).trim(), via: "Groq/"+model };
+    } catch (e) {
+      errors.push(model + ": " + (e.message || e));
+      console.warn("Groq model fail", model, e);
+    }
   }
-  // 2) Gemini
-  try {
-    setStatus("AI: Gemini…");
-    const text = await callGemini(system, user);
-    return { text, via: "Gemini" };
-  } catch (e) {
-    errors.push("Gemini: " + (e.message || e));
-    console.warn("Gemini fail", e);
-  }
-  // 3) Grok xAI if key present
+
+  // Gemini OFF for now (models deprecated on key)
+  // Grok only if key present
   try {
     setStatus("AI: Grok…");
     const text = await callGrok(system, user);
     return { text, via: "Grok" };
   } catch (e) {
     errors.push("Grok: " + (e.message || e));
-    console.warn("Grok fail", e);
   }
-  throw new Error(errors.join(" | ") || "All AI failed");
+
+  throw new Error(errors.slice(0, 4).join(" | ") || "All AI failed");
 }
+
 
 
 function formatWhen(ts){
