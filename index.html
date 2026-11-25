@@ -96,6 +96,23 @@
   .col.sweets .col-title { background:#d1fae5; }
   .col.fc .col-title { background:#ffedd5; }
   .col.other .col-title { background:#dbeafe; }
+  .col.dry .col-title { background:#fef3c7; }
+  .type-badge.dry { background:#fef3c7; color:#92400e; border:1px solid #fbbf24; }
+  .pend-box {
+    border: 2.5px solid #0f172a; background: #fffbeb;
+    padding: 8px 10px; margin: 6px 0; border-radius: 6px;
+    break-inside: avoid; page-break-inside: avoid;
+    text-align: right; max-width: 280px; margin-left: auto;
+  }
+  .pend-box .pb-shop { font-weight: 900; font-size: .95rem; color: #0f172a; }
+  .pend-box .pb-st { font-weight: 800; color: #b45309; font-size: .78rem; margin-top: 2px; }
+  .pend-box .pb-date { font-weight: 700; font-size: .75rem; margin-top: 2px; }
+  .pend-box .pb-msg {
+    margin-top: 8px; font-weight: 900; font-size: .78rem;
+    border-top: 1.5px solid #0f172a; padding-top: 6px; text-align: center;
+  }
+  .pend-wrap { margin-top: 8px; }
+
   .list {
     display:flex; flex-direction:column; gap:4px;
     flex:0 1 auto; align-content:flex-start; align-items:stretch;
@@ -420,6 +437,7 @@
   <button class="secondary" type="button" onclick="printMode('fc');closeDrawer()">Print Fresh Cream Only</button>
   <button class="secondary" type="button" onclick="printMode('sweets');closeDrawer()">Print Sweet Only</button>
   <button class="secondary" type="button" onclick="printMode('other');closeDrawer()">Print Other Only</button>
+  <button class="secondary" type="button" onclick="printMode('dry');closeDrawer()">Print Dry Only</button>
   <button class="secondary" type="button" onclick="printCurrent();closeDrawer()">Print Current Sheet</button>
   <button class="amber" type="button" onclick="exportPdf();closeDrawer()">Download PDF</button>
   <p style="font-size:.72rem;color:#94a3b8;margin:8px 0 0">Max 8 orders per printed page. Extra orders go to the next page.</p>
@@ -428,8 +446,8 @@
   <button class="secondary" type="button" onclick="showHistory();closeDrawer()">History</button>
   <button class="amber" type="button" id="btnCompleteMenu" style="display:none" onclick="completeSlot();closeDrawer()">Complete Slot (after 7:00 PM)</button>
   <button class="secondary" type="button" onclick="showAuditLogs();closeDrawer()">Edit / Delete Logs</button>
-  <button class="amber" type="button" onclick="openAllShopsPage();closeDrawer()">All Shops · Null / Done</button>
-  <button class="secondary" type="button" onclick="openNullShopNotify();closeDrawer()">Shop SMS (manual)</button>
+  <button class="secondary" type="button" disabled title="Unavailable" style="opacity:.45;cursor:not-allowed">All Shops · Null / Done (Unavailable)</button>
+  <button class="secondary" type="button" disabled title="Unavailable" style="opacity:.45;cursor:not-allowed">Shop SMS (Unavailable)</button>
   <hr style="border:0;border-top:1px solid #334155;margin:12px 0"/>
   <button class="secondary" type="button" onclick="exportDay();closeDrawer()">Export JSON</button>
   <button class="red" type="button" onclick="clearDay();closeDrawer()">Clear This Day</button>
@@ -452,6 +470,7 @@
       <button class="secondary" style="flex:1" onclick="addManual('sweets')">+ Sweets</button>
       <button class="secondary" style="flex:1" onclick="addManual('fc')">+ F.C.</button>
       <button class="secondary" style="flex:1" onclick="addManual('other')">+ Other</button>
+      <button class="secondary" style="flex:1" onclick="addManual('dry')">+ Dry</button>
     </div>
     <label>SPECIAL NOTE</label>
     <textarea id="specialNote" placeholder="Write note (English is auto-converted to Urdu when possible)" style="min-height:80px"></textarea>
@@ -489,6 +508,13 @@
 <div class="modal-bg" id="modal">
   <div class="modal">
     <h3>Edit ticket</h3>
+    <label>Department</label>
+    <select id="eDept">
+      <option value="sweets">Sweet</option>
+      <option value="fc">Fresh Cream (F.C.)</option>
+      <option value="other">Other</option>
+      <option value="dry">Dry</option>
+    </select>
     <label>Shop (English)</label><input id="eShop"/>
     <label>1st Name (top)</label><input id="eName1" placeholder="Top name"/>
     <label>2nd Name</label><input id="eName2" placeholder="Middle name"/>
@@ -637,6 +663,40 @@ function dayName(ymd){
     return dt.toLocaleDateString("en-US", { weekday:"long" });
   } catch(e){ return ""; }
 }
+function collectPendingOrders(sideFilter){
+  const t0 = todayStr();
+  const out = [];
+  Object.keys(db||{}).forEach(k => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(k)) return;
+    if (k <= t0) return;
+    const dayObj = db[k];
+    if (!dayObj || !dayObj.sheets) return;
+    dayObj.sheets.forEach(s => {
+      const sides = sideFilter && sideFilter !== "all"
+        ? [sideFilter]
+        : ["sweets","fc","other","dry"];
+      sides.forEach(side => {
+        (s[side]||[]).forEach(o => {
+          out.push({ date:k, side, shopName: o.shopName||"—", qty: o.qty||"" });
+        });
+      });
+    });
+  });
+  out.sort((a,b)=> a.date.localeCompare(b.date) || a.shopName.localeCompare(b.shopName));
+  return out;
+}
+function pendingBoxesHtml(mode){
+  const list = collectPendingOrders(mode === "all" ? null : mode);
+  if (!list.length) return "";
+  return `<div class="pend-wrap">` + list.map(p => {
+    return `<div class="pend-box">
+      <div class="pb-shop">${esc(p.shopName)}</div>
+      <div class="pb-st">Status: Pending</div>
+      <div class="pb-date">Date: ${esc(p.date)}</div>
+      <div class="pb-msg">Yeh item abhi Pending hai isski date yeh hai 🤍<br/>${esc(p.date)}</div>
+    </div>`;
+  }).join("") + `</div>`;
+}
 function listFuturePendingDays(){
   const t0 = todayStr();
   const out = [];
@@ -675,7 +735,7 @@ $("maxOrders").onchange = () => localStorage.setItem("od_max", $("maxOrders").va
 function maxPerSheet(){ return Number($("maxOrders").value || 10); }
 function loadDb(){ try { return JSON.parse(localStorage.getItem(LS_KEY)||"{}"); } catch(e){ return {}; } }
 function saveDbLocal(){ localStorage.setItem(LS_KEY, JSON.stringify(db)); }
-function emptySheet(){ return { sweets:[], fc:[], other:[] }; }
+function emptySheet(){ return { sweets:[], fc:[], other:[], dry:[] }; }
 
 function ensureDayLocal(){
   if (!db[day]) db[day] = { sheets:[ emptySheet() ], history:[], slotLabel:"2nd Orders", specialNote:"", auditLogs:[] };
@@ -688,6 +748,7 @@ function ensureDayLocal(){
     if (!s.sweets) s.sweets = [];
     if (!s.fc) s.fc = [];
     if (!s.other) s.other = [];
+    if (!s.dry) s.dry = [];
   });
   if (sheetIndex >= db[day].sheets.length) sheetIndex = Math.max(0, db[day].sheets.length-1);
 }
@@ -837,7 +898,7 @@ async function loadDayOnline(){
   setStatus("Local · " + selected);
   render();
 }
-function sheetTotal(s){ return (s.sweets||[]).length + (s.fc||[]).length + (s.other||[]).length; }
+function sheetTotal(s){ return (s.sweets||[]).length + (s.fc||[]).length + (s.other||[]).length + (s.dry||[]).length; }
 
 function newSheet(){
   if (viewingHistory()){ setStatus("History me sheet nahi banti — Current slot pe jayein"); return; }
@@ -1025,6 +1086,7 @@ function qtyHtml(q){
 function typeLabel(side){
   if (side === "fc") return { en: "Fresh Cream Order", ur: "فریش کریم آرڈر", cls: "fc" };
   if (side === "other") return { en: "Other / Note", ur: "دیگر / نوٹ", cls: "other" };
+  if (side === "dry") return { en: "Dry Order", ur: "ڈرائی آرڈر", cls: "dry" };
   return { en: "Sweet Order", ur: "سویٹ آرڈر", cls: "sweet" };
 }
 function namesBlock(o){
@@ -1058,7 +1120,7 @@ function namesBlock(o){
   }).join("") + `</div>`;
 }
 function ticketHtml(o, i, side){
-  const prefix = side==="fc" ? "FC" : side==="other" ? "O" : "S";
+  const prefix = side==="fc" ? "FC" : side==="other" ? "O" : side==="dry" ? "D" : "S";
   const shop = (o.shopName || "—").trim() || "—";
   const tl = typeLabel(side);
   const flav = o.flavour ? `<div class="t-line"><b>Flav.</b> ${esc(o.flavour)}</div>` : "";
@@ -1110,13 +1172,14 @@ function shopSummary(s){
   function add(list, type){
     list.forEach(o => {
       const name = (o.shopName || "—").trim() || "—";
-      if (!map[name]) map[name] = { sweets:0, fc:0, other:0 };
+      if (!map[name]) map[name] = { sweets:0, fc:0, other:0, dry:0 };
       map[name][type]++;
     });
   }
   add(s.sweets||[], "sweets");
   add(s.fc||[], "fc");
   add(s.other||[], "other");
+  add(s.dry||[], "dry");
   return map;
 }
 
@@ -1257,7 +1320,8 @@ function summaryHtml(s){
     if (m.sweets) parts.push("Sweet " + m.sweets);
     if (m.fc) parts.push("FC " + m.fc);
     if (m.other) parts.push("Other " + m.other);
-    const c = m.sweets + m.fc + m.other;
+    if (m.dry) parts.push("Dry " + m.dry);
+    const c = m.sweets + m.fc + m.other + (m.dry||0);
     total += c;
     return `<div class="sum-cell"><span class="n">${i+1}.</span> ${esc(name)} — ${esc(parts.join(", "))}</div>`;
   });
@@ -1274,11 +1338,12 @@ function summaryHtml(s){
 }
 
 function filterSheet(s, mode){
-  if (!mode || mode === "all") return { sweets:s.sweets||[], fc:s.fc||[], other:s.other||[] };
+  if (!mode || mode === "all") return { sweets:s.sweets||[], fc:s.fc||[], other:s.other||[], dry:s.dry||[] };
   return {
     sweets: mode === "sweets" ? (s.sweets||[]) : [],
     fc: mode === "fc" ? (s.fc||[]) : [],
-    other: mode === "other" ? (s.other||[]) : []
+    other: mode === "other" ? (s.other||[]) : [],
+    dry: mode === "dry" ? (s.dry||[]) : []
   };
 }
 
@@ -1288,6 +1353,7 @@ function packTicketsHtml(f, total){
   (f.sweets||[]).forEach((o,i)=> items.push({side:"sweets", o, i}));
   (f.fc||[]).forEach((o,i)=> items.push({side:"fc", o, i}));
   (f.other||[]).forEach((o,i)=> items.push({side:"other", o, i}));
+  (f.dry||[]).forEach((o,i)=> items.push({side:"dry", o, i}));
   if (!items.length) return `<div class="empty-sheet">No orders on this sheet</div>`;
   const dense = (total || items.length) >= 6 ? " dense" : "";
   return `<div class="pack-grid${dense}">${items.map(it => ticketHtml(it.o, it.i, it.side)).join("")}</div>`;
@@ -1308,6 +1374,7 @@ function buildSheetHtml(s, idx, totalSheets, mode){
     if (f.sweets.length) parts.push(colHtml("SWEET ORDER · سویٹ آرڈر", "sweets", f.sweets, "sweets"));
     if (f.fc.length) parts.push(colHtml("FRESH CREAM ORDER · فریش کریم آرڈر", "fc", f.fc, "fc"));
     if (f.other.length) parts.push(colHtml("OTHER / NOTE · دیگر", "other", f.other, "other"));
+    if ((f.dry||[]).length) parts.push(colHtml("DRY ORDER · ڈرائی آرڈر", "dry", f.dry, "dry"));
     const n = parts.length;
     const colsClass = n <= 1 ? "c1" : n === 2 ? "c2" : "c3";
     body = `<div class="cols ${colsClass}">${parts.join("")}</div>`;
@@ -1328,6 +1395,8 @@ function buildSheetHtml(s, idx, totalSheets, mode){
       <div>This order was generated automatically by MrCrazy AI</div>
       <div>${esc(stamp)}</div>
     </div>`;
+  // Pending future items for this department (no full details — bold box only)
+  const pendHtml = (!isFutureDay(day) && !viewingHistory()) ? pendingBoxesHtml(m) : "";
   return `<div class="sheet">
     <div class="sheet-head">
       <span class="h-left">Sheet ${idx+1}/${totalSheets}${modeTag}</span>
@@ -1336,6 +1405,7 @@ function buildSheetHtml(s, idx, totalSheets, mode){
     </div>
     ${body}
     ${sum}
+    ${pendHtml}
     <div class="sheet-bottom">
       ${noteCorner}
       ${devCorner}
@@ -1424,9 +1494,11 @@ function render(){
     if (!viewingHistory() && day === todayStr()) {
       const pend = listFuturePendingDays();
       if (pend.length) {
+        const shops = collectPendingOrders(null).map(x => x.shopName).filter(Boolean);
+        const uniq = [...new Set(shops)].slice(0, 12).join(", ");
         const bits = pend.map(p => `${p.date} (${p.total})`).join(", ");
         host.innerHTML = `<div class="pending-banner">
-          <span>Your order is pending: ${esc(bits)}</span>
+          <span><b>Pending</b>${uniq ? " · " + esc(uniq) : ""} — ${esc(bits)}</span>
           <button type="button" onclick="viewPendingDate('${pend[0].date}')">View</button>
         </div>`;
       }
@@ -1444,6 +1516,7 @@ function openEdit(side,i){
   if (viewingHistory()){ popup("Read-only", "History view cannot be edited."); return; }
   editRef = { side, i };
   const o = curSheet()[side][i];
+  if ($("eDept")) $("eDept").value = side;
   $("eShop").value = o.shopName||"";
   const ns = Array.isArray(o.names) ? o.names : [];
   const n1 = (ns[0] && (ns[0].en||ns[0].ur)) ? (ns[0].en || ns[0].ur) : (o.name1 || o.nameOnCakeEn || o.customerName || "");
@@ -1462,7 +1535,11 @@ function openEdit(side,i){
 function closeModal(){ $("modal").classList.remove("show"); editRef=null; }
 function saveTicket(){
   if (!editRef) return;
-  const o = curSheet()[editRef.side][editRef.i];
+  const sheet = curSheet();
+  const oldSide = editRef.side;
+  let newSide = ($("eDept") && $("eDept").value) || oldSide;
+  if (!["sweets","fc","other","dry"].includes(newSide)) newSide = oldSide;
+  const o = sheet[oldSide][editRef.i];
   const oldSnap = snapOrder(o);
   o.shopName=$("eShop").value.trim();
   const a1 = ($("eName1")&&$("eName1").value||$("eName").value||"").trim();
@@ -1480,9 +1557,14 @@ function saveTicket(){
   o.detailUrdu=$("eDetail").value.trim();
   o.delivery=($("eDelivery")&&$("eDelivery").value||"").trim();
   o.updatedAt = Date.now();
+  if (newSide !== oldSide) {
+    sheet[oldSide].splice(editRef.i, 1);
+    if (!sheet[newSide]) sheet[newSide] = [];
+    sheet[newSide].push(o);
+  }
   const newSnap = snapOrder(o);
   pushAudit("EDIT", {
-    summary: (o.shopName||"") + " · " + (o.qty||""),
+    summary: (o.shopName||"") + " · " + (o.qty||"") + (newSide!==oldSide ? (" · dept "+oldSide+"→"+newSide) : ""),
     old: oldSnap,
     edited: newSnap
   });
@@ -1510,7 +1592,7 @@ function placeOrder(item, side){
   if (viewingHistory()){ setStatus("History read-only — Current slot pe switch karein"); return; }
   ensureDay();
   const max = maxPerSheet();
-  if (!["sweets","fc","other"].includes(side)) side = "other";
+  if (!["sweets","fc","other","dry"].includes(side)) side = "other";
   let s = curSheet();
   if (sheetTotal(s) >= max) { newSheet(); s = curSheet(); }
   s[side].push(item);
@@ -1600,7 +1682,7 @@ RULES:
 4) Cake names / H.B.D / HAPPY BIRTHDAY → names[] English (1st, 2nd, 3rd).
 5) "2 in 1" → flavour "2 in 1".
 6) Butter as possible flavour → needsButterConfirm true.
-7) side: fc = cream cake; sweets = mithai; other = note.
+7) side: fc = cream cake; sweets = mithai; dry = dry fruit / dry items; other = note.
 8) If customer did not say it, do not write it.
 `;
 
@@ -1660,6 +1742,7 @@ async function aiAdd(){
       let side = (o.side||"").toLowerCase();
       if (side !== "fc" && side !== "sweets" && side !== "other") {
         if (/cream|f\.?c/i.test(o.type||"")) side = "fc";
+        else if (/\bdry\b|ڈرائی/i.test(o.type||o.detailUrdu||"")) side = "dry";
         else if (/jam|note|other|special/i.test(o.type||o.detailUrdu||"")) side = "other";
         else side = "sweets";
       }
