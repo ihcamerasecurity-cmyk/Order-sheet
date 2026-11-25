@@ -438,6 +438,14 @@
   <button class="secondary" type="button" onclick="printMode('sweets');closeDrawer()">Print Sweet Only</button>
   <button class="secondary" type="button" onclick="printMode('other');closeDrawer()">Print Other Only</button>
   <button class="secondary" type="button" onclick="printMode('dry');closeDrawer()">Print Dry Only</button>
+  <p style="font-size:.72rem;color:#94a3b8;margin:10px 0 4px">Print 2 departments together</p>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:.78rem;color:#cbd5e1">
+    <label><input type="checkbox" class="pmSide" value="sweets"/> Sweet</label>
+    <label><input type="checkbox" class="pmSide" value="fc"/> F.C.</label>
+    <label><input type="checkbox" class="pmSide" value="other"/> Other</label>
+    <label><input type="checkbox" class="pmSide" value="dry"/> Dry</label>
+  </div>
+  <button class="amber" type="button" onclick="printSelectedDepts();closeDrawer()">Print Selected (2+)</button>
   <button class="secondary" type="button" onclick="printCurrent();closeDrawer()">Print Current Sheet</button>
   <button class="amber" type="button" onclick="exportPdf();closeDrawer()">Download PDF</button>
   <p style="font-size:.72rem;color:#94a3b8;margin:8px 0 0">Max 8 orders per printed page. Extra orders go to the next page.</p>
@@ -672,9 +680,14 @@ function collectPendingOrders(sideFilter){
     const dayObj = db[k];
     if (!dayObj || !dayObj.sheets) return;
     dayObj.sheets.forEach(s => {
-      const sides = sideFilter && sideFilter !== "all"
-        ? [sideFilter]
-        : ["sweets","fc","other","dry"];
+      let sides;
+      if (!sideFilter || sideFilter === "all") {
+        sides = ["sweets","fc","other","dry"];
+      } else if (Array.isArray(sideFilter)) {
+        sides = sideFilter;
+      } else {
+        sides = [sideFilter];
+      }
       sides.forEach(side => {
         (s[side]||[]).forEach(o => {
           out.push({ date:k, side, shopName: o.shopName||"—", qty: o.qty||"" });
@@ -685,15 +698,28 @@ function collectPendingOrders(sideFilter){
   out.sort((a,b)=> a.date.localeCompare(b.date) || a.shopName.localeCompare(b.shopName));
   return out;
 }
+function sideLabelShort(side){
+  if (side === "fc") return "F.C. / Fresh Cream";
+  if (side === "other") return "Other";
+  if (side === "dry") return "Dry";
+  return "Sweet";
+}
 function pendingBoxesHtml(mode){
-  const list = collectPendingOrders(mode === "all" ? null : mode);
+  // mode: "all" | single side | "sweets+fc" style multi
+  let filter = null;
+  if (mode && mode !== "all") {
+    if (String(mode).indexOf("+") >= 0) filter = String(mode).split("+").filter(Boolean);
+    else filter = mode;
+  }
+  const list = collectPendingOrders(filter);
   if (!list.length) return "";
   return `<div class="pend-wrap">` + list.map(p => {
+    const typ = sideLabelShort(p.side);
     return `<div class="pend-box">
       <div class="pb-shop">${esc(p.shopName)}</div>
-      <div class="pb-st">Status: Pending</div>
+      <div class="pb-st">Item: ${esc(typ)} · Status: Pending</div>
       <div class="pb-date">Date: ${esc(p.date)}</div>
-      <div class="pb-msg">Yeh item abhi Pending hai isski date yeh hai 🤍<br/>${esc(p.date)}</div>
+      <div class="pb-msg">یہ آئٹم ابھی پینڈنگ ہے، براہِ کرم اس کی پروڈکشن ${esc(p.date)} کو کر دی جائے۔</div>
     </div>`;
   }).join("") + `</div>`;
 }
@@ -1339,11 +1365,12 @@ function summaryHtml(s){
 
 function filterSheet(s, mode){
   if (!mode || mode === "all") return { sweets:s.sweets||[], fc:s.fc||[], other:s.other||[], dry:s.dry||[] };
+  const set = new Set(String(mode).split("+").filter(Boolean));
   return {
-    sweets: mode === "sweets" ? (s.sweets||[]) : [],
-    fc: mode === "fc" ? (s.fc||[]) : [],
-    other: mode === "other" ? (s.other||[]) : [],
-    dry: mode === "dry" ? (s.dry||[]) : []
+    sweets: set.has("sweets") ? (s.sweets||[]) : [],
+    fc: set.has("fc") ? (s.fc||[]) : [],
+    other: set.has("other") ? (s.other||[]) : [],
+    dry: set.has("dry") ? (s.dry||[]) : []
   };
 }
 
@@ -1383,7 +1410,7 @@ function buildSheetHtml(s, idx, totalSheets, mode){
   // Special note ONLY on full (all) print — not when printing one type
   const showNote = (!m || m === "all");
   const note = showNote ? getSpecialNote().trim() : "";
-  const modeTag = (!m || m === "all") ? "" : " · " + String(m).toUpperCase();
+  const modeTag = (!m || m === "all") ? "" : " · " + String(m).split("+").map(x => sideLabelShort(x)).join(" + ");
   const now = new Date();
   const stamp = day + " · " + now.toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"});
   const dlabel = esc(day) + (dayName(day) ? " · " + esc(dayName(day)) : "");
@@ -1800,6 +1827,14 @@ function printCurrent(){
 }
 
 /** mode: all | fc | other | sweets — alag print ya ikhatta */
+function printSelectedDepts(){
+  const boxes = Array.from(document.querySelectorAll(".pmSide:checked")).map(x => x.value);
+  if (boxes.length < 2) {
+    popup("Select departments", "Kam az kam 2 departments select karein (e.g. Sweet + F.C.).");
+    return;
+  }
+  printMode(boxes.join("+"));
+}
 function printMode(mode){
   ensureDayLocal();
   if (isFutureDay(day)) {
