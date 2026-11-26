@@ -454,6 +454,7 @@
   <button class="secondary" type="button" onclick="showHistory();closeDrawer()">History</button>
   <button class="amber" type="button" id="btnCompleteMenu" style="display:none" onclick="completeSlot();closeDrawer()">Complete Slot (after 7:00 PM)</button>
   <button class="secondary" type="button" onclick="showAuditLogs();closeDrawer()">Edit / Delete Logs</button>
+  <button class="amber" type="button" onclick="showMovedHistory();closeDrawer()">Moved history</button>
   <button class="secondary" type="button" disabled title="Unavailable" style="opacity:.45;cursor:not-allowed">All Shops · Null / Done (Unavailable)</button>
   <button class="secondary" type="button" disabled title="Unavailable" style="opacity:.45;cursor:not-allowed">Shop SMS (Unavailable)</button>
   <hr style="border:0;border-top:1px solid #334155;margin:12px 0"/>
@@ -533,6 +534,9 @@
     <label>Description</label><textarea id="eDetail" style="min-height:90px"></textarea>
     <label>Order date (sheet date — change to move)</label>
     <input type="date" id="eOrderDate"/>
+    <label style="display:flex;align-items:center;gap:8px;margin-top:8px">
+      <input type="checkbox" id="ePicChg" style="width:auto"/> Picture charges
+    </label>
     <label>Delivery (date / time if any)</label><input id="eDelivery" placeholder="e.g. 12 Nov · 6 PM"/>
     <div class="row">
       <button class="secondary" onclick="closeModal()">Cancel</button>
@@ -796,6 +800,62 @@ function isFutureDay(d){
   const t0 = todayStr();
   return String(d || day) > t0;
 }
+function pushMovedHistory(row){
+  if (!db._movedHistory) db._movedHistory = [];
+  db._movedHistory.unshift(row);
+  if (db._movedHistory.length > 500) db._movedHistory.length = 500;
+  saveDbLocal();
+}
+function showMovedHistory(){
+  const list = db._movedHistory || [];
+  const html = list.length ? list.map(r =>
+    `<div style="padding:8px 0;border-bottom:1px solid #334155;font-size:.82rem">
+      <b>${esc(r.shopName||"")}</b> · ${esc(r.qty||"")}<br/>
+      <span style="color:#94a3b8">${esc(r.fromDay)} → <b style="color:#fbbf24">${esc(r.toDay)}</b> · ${esc(r.side||"")}</span>
+    </div>`
+  ).join("") : "<p style='color:#94a3b8'>No moved cakes yet.</p>";
+  const box = document.createElement("div");
+  box.className = "modal-bg show";
+  box.onclick = (e) => { if (e.target === box) box.remove(); };
+  box.innerHTML = `<div class="modal" style="max-width:480px;max-height:80vh;overflow:auto" onclick="event.stopPropagation()">
+    <h3>Moved history (date changes only)</h3>
+    ${html}
+    <div class="row"><button class="secondary" onclick="this.closest('.modal-bg').remove()">Close</button></div>
+  </div>`;
+  document.body.appendChild(box);
+}
+function resetOrder(side, i){
+  event && event.stopPropagation && event.stopPropagation();
+  const sheet = curSheet();
+  const o = sheet[side] && sheet[side][i];
+  if (!o) return;
+  const origDay = o.originalDay || day;
+  const origSide = o.originalSide || side;
+  if (origDay === day && origSide === side && !o.movedFrom) {
+    toast("Already home", "Yeh order pehli jagah par hi hai", true);
+    return;
+  }
+  if (!confirm("Reset to original date " + origDay + " / " + origSide + "?")) return;
+  sheet[side].splice(i, 1);
+  if (!db[origDay]) db[origDay] = { sheets:[emptySheet()], history:[], slotLabel:"2nd Orders", specialNote:"", auditLogs:[] };
+  if (!db[origDay].sheets || !db[origDay].sheets.length) db[origDay].sheets = [emptySheet()];
+  db[origDay].sheets.forEach(s => { if (!s.dry) s.dry = []; });
+  const dest = db[origDay].sheets[0];
+  if (!dest[origSide]) dest[origSide] = [];
+  o.movedAt = null;
+  o.movedFrom = null;
+  dest[origSide].push(o);
+  pushMovedHistory({
+    shopName: o.shopName, qty: o.qty,
+    fromDay: day, toDay: origDay, side: origSide, at: Date.now(), reset: true
+  });
+  const from = day;
+  saveDbLocal();
+  Promise.resolve(saveDbBoth(from, origDay)).then(() => {
+    toast("Reset", o.shopName + " → " + origDay, true);
+    render();
+  });
+}
 function pushAudit(action, payload){
   ensureDayLocal();
   if (!db._globalAudit) db._globalAudit = [];
@@ -883,16 +943,31 @@ function saveDb(){
   saveDbLocal();
   saveDayOnline();
 }
-async function saveDayOnline(){
+async function saveDayOnlineFor(dayKey){
   try {
-    const payload = { sheets: db[day].sheets, history: db[day].history||[], slotLabel: db[day].slotLabel||"2nd Orders", specialNote: db[day].specialNote||"", auditLogs: db[day].auditLogs||[], updatedAt: Date.now() };
-    await fetch(DB + "/orderdesk_days/" + encodeURIComponent(day) + ".json", {
+    if (!db[dayKey]) return;
+    const payload = {
+      sheets: db[dayKey].sheets,
+      history: db[dayKey].history||[],
+      slotLabel: db[dayKey].slotLabel||"2nd Orders",
+      specialNote: db[dayKey].specialNote||"",
+      auditLogs: db[dayKey].auditLogs||[],
+      updatedAt: Date.now()
+    };
+    await fetch(DB + "/orderdesk_days/" + encodeURIComponent(dayKey) + ".json", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload)
     });
-  } catch(e) { console.warn("online save", e); }
+  } catch(e) { console.warn("online save", dayKey, e); }
 }
+async function saveDayOnline(){ return saveDayOnlineFor(day); }
+async function saveDbBoth(a, b){
+  saveDbLocal();
+  await saveDayOnlineFor(a);
+  if (b && b !== a) await saveDayOnlineFor(b);
+}
+
 async function loadDayOnline(){
   setStatus("Loading…");
   const selected = day;
@@ -903,6 +978,15 @@ async function loadDayOnline(){
       const j = await r.json();
       // null / missing online = empty day (do NOT keep other date data)
       if (!j) {
+        const locTot = (db[selected] && Array.isArray(db[selected].sheets))
+          ? db[selected].sheets.reduce((a,s)=>a+sheetTotal(s),0) : 0;
+        if (locTot > 0) {
+          sheetIndex = 0;
+          setStatus("Local · " + selected);
+          render();
+          saveDayOnlineFor(selected);
+          return;
+        }
         db[selected] = { sheets:[ emptySheet() ], history:[], slotLabel:"2nd Orders", specialNote:"", auditLogs:[] };
         sheetIndex = 0;
         saveDbLocal();
@@ -1176,7 +1260,15 @@ function ticketHtml(o, i, side){
   const detailBlock = (q || det)
     ? `<div class="detail">${q ? qtyHtml(q) + (det ? "\n" : "") : ""}${det ? esc(det) : ""}</div>`
     : "";
-  return `<div class="ticket" onclick="openEdit('${side}',${i})">
+  const pic = o.pictureCharges ? `<div class="pic-chg">PHOTO / PICTURE CHARGES</div>` : "";
+  const moved = (o.movedFrom || (o.originalDay && o.originalDay !== day)) ? " moved-hl" : "";
+  const canReset = o.originalDay && (o.originalDay !== day || o.originalSide !== side || o.movedFrom);
+  const rst = canReset
+    ? `<button type="button" class="reset-btn" onclick="resetOrder('${side}',${i})">Reset</button>`
+    : "";
+  return `<div class="ticket${moved}" onclick="openEdit('${side}',${i})">
+    ${rst}
+    ${pic}
     <div class="type-badge ${tl.cls}">${esc(tl.en)} · ${esc(tl.ur)}</div>
     <div class="t-head">
       <span class="t-no">${esc(prefix+" "+(i+1))}</span>
@@ -1560,6 +1652,7 @@ function openEdit(side,i){
   const o = curSheet()[side][i];
   if ($("eDept")) $("eDept").value = side;
   if ($("eOrderDate")) $("eOrderDate").value = day;
+  if ($("ePicChg")) $("ePicChg").checked = !!o.pictureCharges;
   $("eShop").value = o.shopName||"";
   const ns = Array.isArray(o.names) ? o.names : [];
   const n1 = (ns[0] && (ns[0].en||ns[0].ur)) ? (ns[0].en || ns[0].ur) : (o.name1 || o.nameOnCakeEn || o.customerName || "");
@@ -1583,7 +1676,10 @@ function saveTicket(){
   let newSide = ($("eDept") && $("eDept").value) || oldSide;
   if (!["sweets","fc","other","dry"].includes(newSide)) newSide = oldSide;
   const o = sheet[oldSide][editRef.i];
+  if (!o) return;
   const oldSnap = snapOrder(o);
+  if (!o.originalDay) o.originalDay = day;
+  if (!o.originalSide) o.originalSide = oldSide;
   o.shopName=$("eShop").value.trim();
   const a1 = ($("eName1")&&$("eName1").value||$("eName").value||"").trim();
   const a2 = ($("eName2")&&$("eName2").value||"").trim();
@@ -1599,52 +1695,76 @@ function saveTicket(){
   o.flavour=$("eFlavour").value.trim();
   o.detailUrdu=$("eDetail").value.trim();
   o.delivery=($("eDelivery")&&$("eDelivery").value||"").trim();
+  o.pictureCharges = !!( $("ePicChg") && $("ePicChg").checked );
   o.updatedAt = Date.now();
-  if (newSide !== oldSide) {
+
+  const fromDay = day;
+  const targetDay = ($("eOrderDate") && $("eOrderDate").value) ? $("eOrderDate").value.trim() : day;
+  let sideNow = oldSide;
+
+  // department change on same day first
+  if (newSide !== oldSide && targetDay === fromDay) {
     sheet[oldSide].splice(editRef.i, 1);
     if (!sheet[newSide]) sheet[newSide] = [];
     sheet[newSide].push(o);
+    sideNow = newSide;
   }
-  // Move to another date if user changed Order date
-  const targetDay = ($("eOrderDate") && $("eOrderDate").value) ? $("eOrderDate").value.trim() : day;
-  if (targetDay && targetDay !== day) {
-    // remove from current day sheet
-    const sideNow = newSide;
-    const list = curSheet()[sideNow] || [];
-    const idx = list.indexOf(o);
-    if (idx >= 0) list.splice(idx, 1);
-    else if (editRef && curSheet()[oldSide]) {
-      /* already moved depts */
+
+  if (targetDay && targetDay !== fromDay) {
+    // remove from source
+    const srcList = (db[fromDay] && db[fromDay].sheets && db[fromDay].sheets[sheetIndex])
+      ? db[fromDay].sheets[sheetIndex]
+      : sheet;
+    const sideToRemove = (newSide !== oldSide) ? oldSide : oldSide;
+    // after possible same-day dept move, object is on newSide; for cross-day always take from current index
+    let removed = false;
+    ["sweets","fc","other","dry"].forEach(sd => {
+      const arr = srcList[sd] || [];
+      const ix = arr.indexOf(o);
+      if (ix >= 0) { arr.splice(ix, 1); removed = true; }
+    });
+    if (!removed && srcList[oldSide] && srcList[oldSide][editRef.i] === o) {
+      srcList[oldSide].splice(editRef.i, 1);
     }
-    // ensure removed from old side if still there
-    const ol = curSheet()[oldSide] || [];
-    const oi = ol.indexOf(o);
-    if (oi >= 0) ol.splice(oi, 1);
-    // destination day
+    sideNow = newSide;
     if (!db[targetDay]) {
       db[targetDay] = { sheets:[ emptySheet() ], history:[], slotLabel:"2nd Orders", specialNote:"", auditLogs:[] };
     }
-    if (!db[targetDay].sheets || !db[targetDay].sheets.length) {
-      db[targetDay].sheets = [ emptySheet() ];
-    }
+    if (!db[targetDay].sheets || !db[targetDay].sheets.length) db[targetDay].sheets = [ emptySheet() ];
+    // migrate dry arrays on old data
+    db[targetDay].sheets.forEach(s => { if (!s.dry) s.dry = []; });
     const dest = db[targetDay].sheets[0];
     if (!dest[sideNow]) dest[sideNow] = [];
+    o.movedAt = Date.now();
+    o.movedFrom = fromDay;
     dest[sideNow].push(o);
-    pushAudit("EDIT", {
-      summary: (o.shopName||"") + " · moved " + day + " → " + targetDay,
+    pushMovedHistory({
+      shopName: o.shopName,
+      qty: o.qty,
+      fromDay: fromDay,
+      toDay: targetDay,
+      side: sideNow,
+      at: Date.now()
+    });
+    pushAudit("MOVE", {
+      summary: (o.shopName||"") + " · " + fromDay + " → " + targetDay,
       old: oldSnap,
       edited: snapOrder(o)
     });
-    saveDb();
-    closeModal();
-    day = targetDay;
-    if ($("dayDate")) $("dayDate").value = day;
-    sheetIndex = 0;
-    window._histView = false;
-    loadDayOnline();
-    setStatus("Moved to " + targetDay);
+    saveDbLocal();
+    Promise.resolve(saveDbBoth(fromDay, targetDay)).then(() => {
+      closeModal();
+      day = targetDay;
+      if ($("dayDate")) $("dayDate").value = day;
+      sheetIndex = 0;
+      window._histView = false;
+      // show local target without wiping
+      setStatus("Moved to " + targetDay);
+      render();
+    });
     return;
   }
+
   const newSnap = snapOrder(o);
   pushAudit("EDIT", {
     summary: (o.shopName||"") + " · " + (o.qty||"") + (newSide!==oldSide ? (" · dept "+oldSide+"→"+newSide) : ""),
@@ -1678,6 +1798,8 @@ function placeOrder(item, side){
   if (!["sweets","fc","other","dry"].includes(side)) side = "other";
   let s = curSheet();
   if (sheetTotal(s) >= max) { newSheet(); s = curSheet(); }
+  if (!item.originalDay) item.originalDay = day;
+  if (!item.originalSide) item.originalSide = side;
   s[side].push(item);
   saveDb();
 }
@@ -1705,7 +1827,11 @@ function normalize(o, type){
     detailUrdu: o.detailUrdu || "",
     delivery: o.delivery || "",
     type: o.type || type,
-    createdAt: o.createdAt || Date.now()
+    createdAt: o.createdAt || Date.now(),
+    originalDay: o.originalDay || day,
+    originalSide: o.originalSide || type || "sweets",
+    pictureCharges: !!o.pictureCharges,
+    movedAt: o.movedAt || null
   };
 }
 function addManual(side){
@@ -1743,6 +1869,7 @@ Return ONLY JSON:
       "rateNote": "",
       "delivery": "",
       "needsButterConfirm": false,
+      "pictureCharges": false,
       "detailUrdu": "صرف اردو۔ پہلی سطر مقدار۔ پھر گاہک کی تفصیل۔"
     }
   ]
@@ -1767,6 +1894,7 @@ RULES:
 6) Butter as possible flavour → needsButterConfirm true.
 7) side: fc = cream cake; sweets = mithai; dry = dry fruit / dry items; other = note.
 8) If customer did not say it, do not write it.
+9) If customer mentions picture/photo charges / تصویر چارج → pictureCharges true.
 `;
 
 function extractNamesFromDetail(o){
