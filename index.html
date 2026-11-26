@@ -448,6 +448,7 @@
   <button class="amber" type="button" onclick="printSelectedDepts();closeDrawer()">Print Selected (2+)</button>
   <button class="secondary" type="button" onclick="printCurrent();closeDrawer()">Print Current Sheet</button>
   <button class="amber" type="button" onclick="exportPdf();closeDrawer()">Download PDF</button>
+  <button class="amber" type="button" onclick="showMonthlySummary();closeDrawer()">📊 Monthly Summary</button>
   <p style="font-size:.72rem;color:#94a3b8;margin:8px 0 0">Max 8 orders per printed page. Extra orders go to the next page.</p>
   <hr style="border:0;border-top:1px solid #334155;margin:12px 0"/>
   <button class="secondary" type="button" onclick="showActive();closeDrawer()">Current Slot</button>
@@ -2455,12 +2456,178 @@ async function sendNullNotify(){
 
 
 
+/* ========== MONTHLY SUMMARY ========== */
+function isLastDayOfMonth(dateStr) {
+  const d = new Date(dateStr + "T12:00:00");
+  const next = new Date(d);
+  next.setDate(d.getDate() + 1);
+  return next.getMonth() !== d.getMonth();
+}
+function monthKey(dateStr) {
+  return dateStr.slice(0, 7); // YYYY-MM
+}
+function daysInMonth(ym) {
+  const [y, m] = ym.split("-").map(Number);
+  const last = new Date(y, m, 0).getDate();
+  const days = [];
+  for (let i = 1; i <= last; i++) {
+    days.push(ym + "-" + String(i).padStart(2, "0"));
+  }
+  return days;
+}
+async function fetchMonthDays(ym) {
+  const days = daysInMonth(ym);
+  const results = {};
+  // load from local db first, then try online for missing
+  for (const d of days) {
+    if (db[d] && db[d].sheets) {
+      results[d] = db[d];
+    }
+  }
+  // fetch a few key days if needed (limit parallel)
+  const missing = days.filter(d => !results[d]);
+  const batch = missing.slice(0, 15); // avoid too many requests
+  await Promise.all(batch.map(async d => {
+    try {
+      const r = await fetch(DB + "/orderdesk_days/" + encodeURIComponent(d) + ".json?t=" + Date.now());
+      if (r.ok) {
+        const j = await r.json();
+        if (j && Array.isArray(j.sheets)) {
+          results[d] = j;
+          db[d] = {
+            sheets: j.sheets,
+            history: j.history || [],
+            slotLabel: j.slotLabel || "2nd Orders",
+            specialNote: j.specialNote || "",
+            auditLogs: j.auditLogs || []
+          };
+        }
+      }
+    } catch (e) {}
+  }));
+  return results;
+}
+function parseQtyNum(q) {
+  if (!q) return 0;
+  const m = String(q).match(/([\d.]+)/);
+  return m ? parseFloat(m[1]) : 0;
+}
+function aggregateMonth(monthData) {
+  let total = 0, sweets = 0, fc = 0, other = 0, dry = 0;
+  const shopSweet = {}, shopFc = {}, shopOther = {}, shopDry = {};
+  Object.keys(monthData).forEach(d => {
+    const dayObj = monthData[d];
+    (dayObj.sheets || []).forEach(s => {
+      (s.sweets || []).forEach(o => {
+        sweets++; total++;
+        const shop = (o.shopName || "—").trim() || "—";
+        if (!shopSweet[shop]) shopSweet[shop] = { count: 0, qty: 0 };
+        shopSweet[shop].count++;
+        shopSweet[shop].qty += parseQtyNum(o.qty);
+      });
+      (s.fc || []).forEach(o => {
+        fc++; total++;
+        const shop = (o.shopName || "—").trim() || "—";
+        if (!shopFc[shop]) shopFc[shop] = { count: 0, qty: 0 };
+        shopFc[shop].count++;
+        shopFc[shop].qty += parseQtyNum(o.qty);
+      });
+      (s.other || []).forEach(o => {
+        other++; total++;
+        const shop = (o.shopName || "—").trim() || "—";
+        if (!shopOther[shop]) shopOther[shop] = { count: 0, qty: 0 };
+        shopOther[shop].count++;
+        shopOther[shop].qty += parseQtyNum(o.qty);
+      });
+      (s.dry || []).forEach(o => {
+        dry++; total++;
+        const shop = (o.shopName || "—").trim() || "—";
+        if (!shopDry[shop]) shopDry[shop] = { count: 0, qty: 0 };
+        shopDry[shop].count++;
+        shopDry[shop].qty += parseQtyNum(o.qty);
+      });
+    });
+  });
+  return { total, sweets, fc, other, dry, shopSweet, shopFc, shopOther, shopDry };
+}
+function shopListHtml(map, unitLabel) {
+  const keys = Object.keys(map).sort((a,b) => map[b].count - map[a].count);
+  if (!keys.length) return "<p style='color:#666;font-size:.8rem;'>No orders</p>";
+  return keys.map(shop => {
+    const o = map[shop];
+    const qtyStr = o.qty > 0 ? (" — " + (Math.round(o.qty * 10) / 10) + " " + unitLabel) : "";
+    return `<div style="padding:4px 0;border-bottom:1px dashed #ccc;font-size:.78rem;"><b>${esc(shop)}</b> · ${o.count} order${o.count>1?"s":""}${qtyStr}</div>`;
+  }).join("");
+}
+async function showMonthlySummary() {
+  const ym = monthKey(day);
+  setStatus("Loading monthly summary…");
+  const monthData = await fetchMonthDays(ym);
+  const agg = aggregateMonth(monthData);
+  const area = $("printArea");
+  const title = "MONTHLY SUMMARY — " + ym;
+  area.innerHTML = `
+    <div class="sheet" style="max-width:900px;padding:16px;background:#fff;color:#0f172a;">
+      <div style="text-align:center;border-bottom:2px solid #0B8457;padding-bottom:8px;margin-bottom:12px;">
+        <h2 style="margin:0;font-size:1.2rem;color:#0B8457;">HAFIZ SWEETS — ${title}</h2>
+        <p style="margin:4px 0 0;font-size:.8rem;color:#555;">Lal Khooh · Monthly Order Summary</p>
+      </div>
+      <div style="background:#ecfdf5;border:1.5px solid #0B8457;border-radius:8px;padding:12px;margin-bottom:14px;text-align:center;">
+        <div style="font-size:1.4rem;font-weight:900;">Total Orders: ${agg.total}</div>
+        <div style="display:flex;justify-content:center;gap:16px;flex-wrap:wrap;margin-top:8px;font-size:.9rem;">
+          <span><b>Sweet:</b> ${agg.sweets}</span>
+          <span><b>F.C.:</b> ${agg.fc}</span>
+          <span><b>Dry:</b> ${agg.dry}</span>
+          <span><b>Other:</b> ${agg.other}</span>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div style="border:1.5px solid #0f172a;border-radius:6px;padding:8px;">
+          <h4 style="margin:0 0 6px;background:#d1fae5;padding:4px;text-align:center;font-size:.85rem;">FRESH CREAM LIST</h4>
+          ${shopListHtml(agg.shopFc, "Pound")}
+        </div>
+        <div style="border:1.5px solid #0f172a;border-radius:6px;padding:8px;">
+          <h4 style="margin:0 0 6px;background:#d1fae5;padding:4px;text-align:center;font-size:.85rem;">SWEET LIST</h4>
+          ${shopListHtml(agg.shopSweet, "KG")}
+        </div>
+        <div style="border:1.5px solid #0f172a;border-radius:6px;padding:8px;">
+          <h4 style="margin:0 0 6px;background:#fef3c7;padding:4px;text-align:center;font-size:.85rem;">DRY LIST</h4>
+          ${shopListHtml(agg.shopDry, "KG")}
+        </div>
+        <div style="border:1.5px solid #0f172a;border-radius:6px;padding:8px;">
+          <h4 style="margin:0 0 6px;background:#dbeafe;padding:4px;text-align:center;font-size:.85rem;">OTHER LIST</h4>
+          ${shopListHtml(agg.shopOther, "")}
+        </div>
+      </div>
+      <div style="margin-top:14px;text-align:center;font-size:.7rem;color:#64748b;border-top:1px solid #cbd5e1;padding-top:8px;">
+        Developed by Muhammad Naeem · MrCrazy Digital · ${new Date().toLocaleString()}
+      </div>
+      <div style="margin-top:10px;display:flex;gap:8px;justify-content:center;" class="no-print-ms">
+        <button type="button" onclick="window.print()" style="width:auto;padding:10px 18px;background:#0B8457;color:#fff;border:0;border-radius:8px;font-weight:700;">🖨️ Print / PDF</button>
+        <button type="button" class="secondary" onclick="render();setStatus('Back')" style="width:auto;padding:10px 18px;">Back to Sheet</button>
+      </div>
+    </div>
+  `;
+  setStatus("Monthly summary · " + ym);
+  // auto show on last day of month when opening
+}
+// Auto-trigger monthly summary hint when on last day
+function maybeShowMonthlyOnLastDay() {
+  if (isLastDayOfMonth(day)) {
+    setTimeout(() => {
+      if (confirm("Aaj month ki last date hai. Monthly Summary sheet dekhna chahte hain?")) {
+        showMonthlySummary();
+      }
+    }, 800);
+  }
+}
+
 ensureDayLocal();
 (function(){
   const sel = document.getElementById("printOrient");
   if (sel) sel.value = localStorage.getItem("od_orient") || "landscape";
 })();
-loadDayOnline();
+loadDayOnline().then(() => { maybeShowMonthlyOnLastDay(); });
 
 document.addEventListener("DOMContentLoaded", function(){
   ["nullShopSelect","nullAction","nullKind"].forEach(function(id){
