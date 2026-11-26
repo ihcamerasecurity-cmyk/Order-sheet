@@ -808,53 +808,93 @@ function pushMovedHistory(row){
 }
 function showMovedHistory(){
   const list = db._movedHistory || [];
-  const html = list.length ? list.map(r =>
-    `<div style="padding:8px 0;border-bottom:1px solid #334155;font-size:.82rem">
-      <b>${esc(r.shopName||"")}</b> · ${esc(r.qty||"")}<br/>
-      <span style="color:#94a3b8">${esc(r.fromDay)} → <b style="color:#fbbf24">${esc(r.toDay)}</b> · ${esc(r.side||"")}</span>
-    </div>`
-  ).join("") : "<p style='color:#94a3b8'>No moved cakes yet.</p>";
+  const html = list.length ? list.map((r, idx) => {
+    const resetBtn = r.reset
+      ? `<span style="color:#94a3b8;font-size:.75rem">Already reset</span>`
+      : `<button type="button" class="secondary sm" style="width:auto;margin:0" onclick="resetFromMovedHistory(${idx})">Reset</button>`;
+    return `<div style="padding:8px 0;border-bottom:1px solid #334155;font-size:.82rem;display:flex;justify-content:space-between;gap:10px;align-items:flex-start">
+      <div>
+        <b>${esc(r.shopName||"")}</b> · ${esc(r.qty||"")}<br/>
+        <span style="color:#94a3b8">${esc(r.fromDay)} → <b style="color:#fbbf24">${esc(r.toDay)}</b> · ${esc(r.side||"")}</span>
+      </div>
+      <div>${resetBtn}</div>
+    </div>`;
+  }).join("") : "<p style='color:#94a3b8'>No moved cakes yet.</p>";
   const box = document.createElement("div");
   box.className = "modal-bg show";
+  box.id = "movedHistModal";
   box.onclick = (e) => { if (e.target === box) box.remove(); };
-  box.innerHTML = `<div class="modal" style="max-width:480px;max-height:80vh;overflow:auto" onclick="event.stopPropagation()">
+  box.innerHTML = `<div class="modal" style="max-width:520px;max-height:80vh;overflow:auto" onclick="event.stopPropagation()">
     <h3>Moved history (date changes only)</h3>
     ${html}
-    <div class="row"><button class="secondary" onclick="this.closest('.modal-bg').remove()">Close</button></div>
+    <div class="row"><button class="secondary" onclick="document.getElementById('movedHistModal').remove()">Close</button></div>
   </div>`;
   document.body.appendChild(box);
 }
-function resetOrder(side, i){
-  event && event.stopPropagation && event.stopPropagation();
-  const sheet = curSheet();
-  const o = sheet[side] && sheet[side][i];
-  if (!o) return;
-  const origDay = o.originalDay || day;
-  const origSide = o.originalSide || side;
-  if (origDay === day && origSide === side && !o.movedFrom) {
-    toast("Already home", "Yeh order pehli jagah par hi hai", true);
+function findOrderOnDay(dayKey, side, shopName, qty){
+  if (!db[dayKey] || !db[dayKey].sheets) return null;
+  const sn = String(shopName||"").trim().toLowerCase();
+  const q = String(qty||"").trim().toLowerCase();
+  for (let si = 0; si < db[dayKey].sheets.length; si++) {
+    const s = db[dayKey].sheets[si];
+    const sides = side ? [side] : ["sweets","fc","other","dry"];
+    for (const sd of sides) {
+      const arr = s[sd] || [];
+      for (let i = 0; i < arr.length; i++) {
+        const o = arr[i];
+        if (String(o.shopName||"").trim().toLowerCase() === sn &&
+            String(o.qty||"").trim().toLowerCase() === q) {
+          return { sheet:s, side:sd, index:i, order:o };
+        }
+      }
+    }
+  }
+  return null;
+}
+function resetFromMovedHistory(idx){
+  const list = db._movedHistory || [];
+  const r = list[idx];
+  if (!r || r.reset) return;
+  const origDay = r.fromDay;
+  const curDay = r.toDay;
+  const side = r.side || "sweets";
+  const hit = findOrderOnDay(curDay, side, r.shopName, r.qty)
+           || findOrderOnDay(curDay, null, r.shopName, r.qty);
+  if (!hit) {
+    toast("Not found", "Order ab sheet par nahi mila (" + (curDay||"") + ")", false);
     return;
   }
-  if (!confirm("Reset to original date " + origDay + " / " + origSide + "?")) return;
-  sheet[side].splice(i, 1);
-  if (!db[origDay]) db[origDay] = { sheets:[emptySheet()], history:[], slotLabel:"2nd Orders", specialNote:"", auditLogs:[] };
-  if (!db[origDay].sheets || !db[origDay].sheets.length) db[origDay].sheets = [emptySheet()];
-  db[origDay].sheets.forEach(s => { if (!s.dry) s.dry = []; });
-  const dest = db[origDay].sheets[0];
-  if (!dest[origSide]) dest[origSide] = [];
+  if (!confirm("Reset " + (r.shopName||"") + " back to " + origDay + "?")) return;
+  const o = hit.order;
+  hit.sheet[hit.side].splice(hit.index, 1);
+  const homeSide = o.originalSide || hit.side || side;
+  const homeDay = o.originalDay || origDay;
+  if (!db[homeDay]) db[homeDay] = { sheets:[emptySheet()], history:[], slotLabel:"2nd Orders", specialNote:"", auditLogs:[] };
+  if (!db[homeDay].sheets || !db[homeDay].sheets.length) db[homeDay].sheets = [emptySheet()];
+  db[homeDay].sheets.forEach(s => { if (!s.dry) s.dry = []; });
+  const dest = db[homeDay].sheets[0];
+  if (!dest[homeSide]) dest[homeSide] = [];
   o.movedAt = null;
   o.movedFrom = null;
-  dest[origSide].push(o);
+  dest[homeSide].push(o);
+  r.reset = true;
+  r.resetAt = Date.now();
   pushMovedHistory({
     shopName: o.shopName, qty: o.qty,
-    fromDay: day, toDay: origDay, side: origSide, at: Date.now(), reset: true
+    fromDay: curDay, toDay: homeDay, side: homeSide, at: Date.now(), reset: true
   });
-  const from = day;
+  // remove duplicate trailing — we already marked r
   saveDbLocal();
-  Promise.resolve(saveDbBoth(from, origDay)).then(() => {
-    toast("Reset", o.shopName + " → " + origDay, true);
+  Promise.resolve(saveDbBoth(curDay, homeDay)).then(() => {
+    const m = document.getElementById("movedHistModal");
+    if (m) m.remove();
+    toast("Reset", (o.shopName||"") + " → " + homeDay, true);
     render();
+    showMovedHistory();
   });
+}
+function resetOrder(side, i){
+  /* ticket reset removed — use Moved history */
 }
 function pushAudit(action, payload){
   ensureDayLocal();
@@ -1262,12 +1302,7 @@ function ticketHtml(o, i, side){
     : "";
   const pic = o.pictureCharges ? `<div class="pic-chg">PHOTO / PICTURE CHARGES</div>` : "";
   const moved = (o.movedFrom || (o.originalDay && o.originalDay !== day)) ? " moved-hl" : "";
-  const canReset = o.originalDay && (o.originalDay !== day || o.originalSide !== side || o.movedFrom);
-  const rst = canReset
-    ? `<button type="button" class="reset-btn" onclick="resetOrder('${side}',${i})">Reset</button>`
-    : "";
   return `<div class="ticket${moved}" onclick="openEdit('${side}',${i})">
-    ${rst}
     ${pic}
     <div class="type-badge ${tl.cls}">${esc(tl.en)} · ${esc(tl.ur)}</div>
     <div class="t-head">
