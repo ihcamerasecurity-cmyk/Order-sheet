@@ -6,47 +6,141 @@
 <title>Hafiz Sweets Special Order Sheet</title>
 <style>
   :root {
-    --bg:#0b1220; --panel:#111a2b; --line:#2a3a55;
-    --text:#e8eef7; --muted:#94a3b8; --green:#0B8457;
-    --cream:#f59e0b; --paper:#fffefb; --ink:#0f172a;
-    --accent:#38bdf8;
+    --bg: #f5e6a8;
+    --panel: #fff8dc;
+    --line: #e8c84a;
+    --text: #1a1208;
+    --muted: #6b5a2e;
+    --green: #0B8457;
+    --cream: #f59e0b;
+    --paper: #fffefb;
+    --ink: #0f172a;
+    --accent: #c41e3a;
+    --hafiz-red: #c41e3a;
+    --hafiz-yellow: #ffd100;
+    --hafiz-gold: #e6b800;
+    --clay: #fff9e6;
+    --clay-shadow: 6px 6px 14px rgba(139, 90, 20, 0.18), -4px -4px 12px rgba(255,255,255,0.9);
+    --clay-inset: inset 3px 3px 8px rgba(139, 90, 20, 0.12), inset -2px -2px 6px rgba(255,255,255,0.85);
   }
   * { box-sizing:border-box; }
-  body { margin:0; font-family:"Segoe UI",system-ui,sans-serif; background:var(--bg); color:var(--text); min-height:100vh; }
+  body {
+    margin:0; font-family:"Segoe UI",system-ui,sans-serif;
+    background: linear-gradient(160deg, #ffe566 0%, #f5e6a8 40%, #fff3c4 100%);
+    color:var(--text); min-height:100vh;
+  }
   header {
     display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;
-    padding:10px 14px; background:linear-gradient(90deg,#0B8457,#065f46);
+    padding:12px 16px;
+    background: linear-gradient(135deg, #c41e3a 0%, #9b1529 100%);
+    color:#fff;
+    box-shadow: 0 6px 20px rgba(196,30,58,0.35);
   }
-  header h1 { margin:0; font-size:1.05rem; }
-  header .sub { opacity:.9; font-size:.8rem; }
-  .layout { display:grid; grid-template-columns:300px 1fr; height:calc(100vh - 50px); }
-  @media(max-width:960px){ .layout{ grid-template-columns:1fr; height:auto; } }
-  .sidebar { background:var(--panel); border-right:1px solid var(--line); padding:12px; overflow:auto; display:flex; flex-direction:column; }
-  .main { padding:10px; overflow:auto; background:#121820; }
+  header h1 { margin:0; font-size:1.1rem; letter-spacing:.02em; }
+  header .sub { opacity:.92; font-size:.8rem; }
+  .layout {
+    display:grid; grid-template-columns: 52px 1fr;
+    height:calc(100vh - 54px); transition: grid-template-columns .25s ease;
+  }
+  .layout.sidebar-open { grid-template-columns: 320px 1fr; }
+  @media(max-width:960px){
+    .layout, .layout.sidebar-open { grid-template-columns:1fr; height:auto; }
+  }
+  .sidebar {
+    background: var(--clay);
+    border-right: 2px solid var(--line);
+    padding: 10px;
+    overflow: hidden;
+    display:flex; flex-direction:column;
+    box-shadow: var(--clay-shadow);
+    transition: padding .2s ease;
+    position: relative; z-index: 20;
+  }
+  .layout:not(.sidebar-open) .sidebar { padding: 8px 4px; }
+  .layout:not(.sidebar-open) .sidebar .sidebar-inner { opacity: 0; pointer-events: none; width: 0; overflow: hidden; }
+  .layout.sidebar-open .sidebar .sidebar-inner { opacity: 1; pointer-events: auto; width: 100%; overflow: auto; }
+  .sidebar-rail {
+    writing-mode: vertical-rl; text-orientation: mixed;
+    font-weight: 800; font-size: .75rem; letter-spacing: .12em;
+    color: var(--hafiz-red); text-align: center; padding: 12px 0;
+    cursor: pointer; user-select: none;
+  }
+  .layout.sidebar-open .sidebar-rail { display: none; }
+  .layout:not(.sidebar-open) .sidebar-rail { display: block; }
+  .sidebar-inner { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+  .main { padding:12px; overflow:auto; background: transparent; }
   label { display:block; font-size:.68rem; color:var(--muted); font-weight:700; letter-spacing:.04em; margin:7px 0 3px; }
   textarea,input,select {
-    width:100%; background:#0f1726; border:1px solid var(--line); color:var(--text);
-    border-radius:9px; padding:8px 10px; font-size:13px;
+    width:100%; background: #fffef5; border: 2px solid #e8c84a; color:var(--text);
+    border-radius: 14px; padding:10px 12px; font-size:13px;
+    box-shadow: var(--clay-inset);
   }
   textarea { min-height:120px; resize:vertical; font-family:inherit; }
   button {
-    border:0; border-radius:9px; padding:11px 12px; font-weight:700; cursor:pointer;
-    color:#fff; background:var(--green); width:100%; margin-top:8px;
+    border:0; border-radius: 14px; padding:11px 12px; font-weight:700; cursor:pointer;
+    color:#fff; background: linear-gradient(145deg, #c41e3a, #9b1529); width:100%; margin-top:8px;
+    box-shadow: 4px 4px 10px rgba(155,21,41,0.25), -2px -2px 6px rgba(255,255,255,0.4);
   }
-  button.secondary { background:#334155; }
-  button.amber { background:var(--cream); color:#111; }
-  button.red { background:#b91c1c; }
+  button:active { transform: scale(0.98); }
+  button.secondary { background: linear-gradient(145deg, #6b5a2e, #4a3d1c); }
+  button.amber { background: linear-gradient(145deg, #ffd100, #e6b800); color:#1a1208; }
+  button.red { background: linear-gradient(145deg, #dc2626, #991b1b); }
   button.sm { width:auto; margin:0; padding:6px 9px; font-size:12px; }
   .status { font-size:.78rem; color:var(--muted); margin-top:6px; min-height:1.1em; }
   .brand {
-    margin-top:auto; padding-top:14px; border-top:1px solid var(--line);
+    margin-top:auto; padding-top:14px; border-top: 2px solid var(--line);
     font-size:.78rem; color:var(--muted); line-height:1.45;
   }
-  .brand b { color:#e2e8f0; }
-  .brand a { color:#7dd3fc; text-decoration:none; }
+  .brand b { color: var(--hafiz-red); }
+  .brand a { color: #9b1529; text-decoration:none; font-weight:600; }
   .toolbar,.day-bar,.sheet-tabs { display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin-bottom:8px; }
-  .day-bar { padding:8px 10px; background:var(--panel); border-radius:10px; border:1px solid var(--line); }
-  .chip { background:#0f2e1c; color:#4ade80; border-radius:999px; padding:2px 8px; font-size:.72rem; font-weight:700; }
+  .day-bar {
+    padding:10px 14px; background: var(--clay); border-radius: 16px;
+    border: 2px solid var(--line); box-shadow: var(--clay-shadow);
+  }
+  .chip {
+    background: linear-gradient(145deg, #fff, #ffe566);
+    color: var(--hafiz-red); border-radius:999px; padding:4px 12px;
+    font-size:.72rem; font-weight:800; border: 1.5px solid var(--hafiz-red);
+    box-shadow: 2px 2px 6px rgba(196,30,58,0.15);
+  }
+  .slot-box {
+    display: inline-flex; align-items: center; gap: 8px;
+    background: linear-gradient(145deg, #fffef5, #ffe566);
+    border: 2px solid var(--hafiz-red); border-radius: 14px;
+    padding: 8px 14px; box-shadow: var(--clay-shadow);
+    font-weight: 800; color: var(--hafiz-red); font-size: .9rem;
+  }
+  .slot-box .slot-icon { font-size: 1.1rem; }
+  .shop-select-wrap {
+    background: linear-gradient(145deg, #fff, #fff8dc);
+    border: 2px solid var(--hafiz-red); border-radius: 16px;
+    padding: 10px 12px; margin-bottom: 8px;
+    box-shadow: var(--clay-shadow);
+  }
+  .shop-select-wrap label { color: var(--hafiz-red); margin-top: 0; }
+  .shop-select-wrap select {
+    border-color: var(--hafiz-red); font-weight: 700; font-size: 14px;
+  }
+  .loading-overlay {
+    position: fixed; inset: 0; background: rgba(255, 209, 0, 0.55);
+    z-index: 9998; display: none; align-items: center; justify-content: center;
+    backdrop-filter: blur(4px);
+  }
+  .loading-overlay.show { display: flex; }
+  .spinner {
+    width: 52px; height: 52px; border-radius: 50%;
+    border: 5px solid #fff; border-top-color: var(--hafiz-red);
+    animation: spin .8s linear infinite;
+    box-shadow: 0 4px 20px rgba(196,30,58,0.3);
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .print-logo {
+    height: 42px; width: auto; object-fit: contain;
+  }
+  @media print {
+    .print-logo { height: 36px; }
+  }
   .sheet-tabs button.active { outline:2px solid #4ade80; }
   .sheet-wrap { display:flex; justify-content:center; }
   .sheet {
@@ -416,14 +510,15 @@
 <body>
 <header>
   <div>
-    <h1>Hafiz Sweets Special Order Sheet</h1>
-    <div class="sub">Professional order desk</div>
+    <h1>🍪 Hafiz Sweets · Special Order Sheet</h1>
+    <div class="sub">Lal Khooh · Sweets & Bakers · Since 1998</div>
   </div>
   <div style="display:flex;align-items:center;gap:8px">
-    <div class="chip" id="todayChip">Today</div>
-    <button type="button" class="menu-btn" title="Menu" onclick="openDrawer()">⋮</button>
+    <div class="chip" id="todayChip">📅 Today</div>
+    <button type="button" class="menu-btn" title="Menu" onclick="openDrawer()" style="width:40px;height:40px;border-radius:12px;background:rgba(255,255,255,0.2);border:1px solid rgba(255,255,255,0.4);color:#fff;font-size:18px;font-weight:900;cursor:pointer;">⋮</button>
   </div>
 </header>
+<div class="loading-overlay" id="loadingOverlay"><div class="spinner"></div></div>
 <div class="toast-host" id="toastHost"></div>
 <div class="drawer-bg" id="drawerBg" onclick="closeDrawer()"></div>
 <div class="drawer" id="drawer">
@@ -463,50 +558,68 @@
   <button class="red" type="button" onclick="clearDay();closeDrawer()">Clear This Day</button>
 </div>
 
-<div class="layout">
-  <aside class="sidebar">
-    <label>DATE</label>
-    <input type="date" id="dayDate"/>
-    <label>MAX ORDERS PER SHEET</label>
-    <select id="maxOrders">
-      <option value="6">6</option>
-      <option value="8">8</option>
-      <option value="10" selected>10</option>
-    </select>
-    <label>ORDER TEXT</label>
-    <textarea id="raw" placeholder="Paste or type order here"></textarea>
-    <button onclick="aiAdd()">Add Order with AI</button>
-    <div style="display:flex;gap:6px">
-      <button class="secondary" style="flex:1" onclick="addManual('sweets')">+ Sweets</button>
-      <button class="secondary" style="flex:1" onclick="addManual('fc')">+ F.C.</button>
-      <button class="secondary" style="flex:1" onclick="addManual('other')">+ Other</button>
-      <button class="secondary" style="flex:1" onclick="addManual('dry')">+ Dry</button>
-    </div>
-    <label>SPECIAL NOTE</label>
-    <textarea id="specialNote" placeholder="Write note (English is auto-converted to Urdu when possible)" style="min-height:80px"></textarea>
-    <button class="secondary" onclick="saveSpecialNote()">Save Special Note</button>
-    <button class="secondary" onclick="newSheet()">+ New Sheet</button>
-    <button class="red" onclick="clearDay()">Clear Day (keep logs)</button>
-    <div class="status" id="status"></div>
-    <div class="brand">
-      <b>About</b><br/>
-      Developed by <b>Muhammad Naeem</b><br/>
-      MrCrazy Digital Company<br/>
-      <a href="tel:03257436319">03257436319</a><br/>
-      <a href="mailto:MuhammadNaeem5658@gmail.com">MuhammadNaeem5658@gmail.com</a><br/>
-      <a href="https://mrcrazydev.netlify.app/" target="_blank" rel="noopener">mrcrazydev.netlify.app</a>
+<div class="layout" id="layoutRoot">
+  <aside class="sidebar" id="sidebarPanel">
+    <div class="sidebar-rail" title="Open panel">📋 ORDERS</div>
+    <div class="sidebar-inner">
+      <label>📅 DATE</label>
+      <input type="date" id="dayDate"/>
+      <label>📊 MAX ORDERS PER SHEET</label>
+      <select id="maxOrders">
+        <option value="6">6</option>
+        <option value="8">8</option>
+        <option value="10" selected>10</option>
+      </select>
+
+      <div class="shop-select-wrap">
+        <label>🏪 SELECT SHOP (required)</label>
+        <select id="shopSelect">
+          <option value="">— Select shop —</option>
+        </select>
+        <p style="font-size:.68rem;color:var(--muted);margin:6px 0 0;">Shop sirf yahan se select karein. Order text mein shop name type na karein.</p>
+      </div>
+
+      <label>✍️ ORDER TEXT</label>
+      <textarea id="raw" placeholder="Order details paste/type karein (shop name select se aayega)"></textarea>
+      <button onclick="aiAdd()">🤖 Add Order with AI</button>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <button class="secondary" style="flex:1;min-width:60px" onclick="addManual('sweets')">🍬 +Sweets</button>
+        <button class="secondary" style="flex:1;min-width:60px" onclick="addManual('fc')">🎂 +F.C.</button>
+        <button class="secondary" style="flex:1;min-width:60px" onclick="addManual('other')">📦 +Other</button>
+        <button class="secondary" style="flex:1;min-width:60px" onclick="addManual('dry')">🥜 +Dry</button>
+      </div>
+      <label>📝 SPECIAL NOTE</label>
+      <textarea id="specialNote" placeholder="Special note (English → Urdu auto)" style="min-height:70px"></textarea>
+      <button class="secondary" onclick="saveSpecialNote()">💾 Save Special Note</button>
+      <button class="secondary" onclick="newSheet()">📄 + New Sheet</button>
+      <button class="red" onclick="clearDay()">🗑️ Clear Day (password)</button>
+      <div class="status" id="status"></div>
+      <div class="brand">
+        <b>About</b><br/>
+        Developed by <b>Muhammad Naeem</b><br/>
+        MrCrazy Digital Company<br/>
+        <a href="tel:03257436319">📞 03257436319</a><br/>
+        <a href="mailto:MuhammadNaeem5658@gmail.com">✉️ Email</a><br/>
+        <a href="https://mrcrazydev.netlify.app/" target="_blank" rel="noopener">🌐 mrcrazydev.netlify.app</a>
+      </div>
     </div>
   </aside>
 
   <main class="main">
     <div class="day-bar">
       <strong id="dayLabel">—</strong>
-      <span class="chip" id="sheetCount">1 sheet</span>
+      <span class="chip" id="sheetCount">📄 1 sheet</span>
       <span style="color:var(--muted);font-size:.78rem" id="ticketCount">0</span>
-      <span class="chip" id="slotChip" style="background:#1e3a5f;color:#93c5fd">2nd Orders</span>
+      <div class="slot-box" id="slotBox">
+        <span class="slot-icon">🕐</span>
+        <span id="slotChipLabel">2nd Orders</span>
+      </div>
     </div>
-    <div id="slotBar" style="margin-bottom:6px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-      <span class="chip" id="slotChip">2nd Orders</span>
+    <div id="slotBar" style="margin-bottom:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <div class="slot-box" style="font-size:.82rem;padding:6px 12px;">
+        <span class="slot-icon">📋</span>
+        <span id="slotChip">2nd Orders</span>
+      </div>
       <span style="color:var(--muted);font-size:.75rem" id="slotHint"></span>
     </div>
     <div class="sheet-tabs" id="sheetTabs"></div>
@@ -1074,8 +1187,18 @@ function newSheet(){
   setStatus("New sheet");
 }
 function clearDay(){
+  const code = prompt("Clear Day password enter karein:");
+  if (code === null) return;
+  if (String(code).trim() !== "722674") {
+    popup("Denied", "Galat password. Clear Day nahi hua.");
+    return;
+  }
   if (!confirm("Is din ki sari sheets clear?")) return;
-  db[day] = { sheets:[ emptySheet() ], history:[], slotLabel:"2nd Orders", specialNote:"", auditLogs: db[day]&&db[day].auditLogs ? db[day].auditLogs : [] }; sheetIndex = 0; window._histView=false; pushAudit("CLEAR_DAY", day); saveDb(); render();
+  db[day] = { sheets:[ emptySheet() ], history:[], slotLabel:"2nd Orders", specialNote:"", auditLogs: db[day]&&db[day].auditLogs ? db[day].auditLogs : [] };
+  sheetIndex = 0; window._histView=false;
+  pushAudit("CLEAR_DAY", day);
+  saveDb(); render();
+  toast("Cleared", "Day cleared with password", true);
 }
 
 
@@ -1566,11 +1689,18 @@ function buildSheetHtml(s, idx, totalSheets, mode){
     </div>`;
   // Pending future items for this department (no full details — bold box only)
   const pendHtml = (!isFutureDay(day) && !viewingHistory()) ? pendingBoxesHtml(m) : "";
+  const logoSvg = `<svg class="print-logo" viewBox="0 0 120 48" xmlns="http://www.w3.org/2000/svg" aria-label="Hafiz">
+    <rect width="120" height="48" rx="6" fill="#ffd100"/>
+    <ellipse cx="60" cy="24" rx="52" ry="20" fill="#fff" stroke="#c41e3a" stroke-width="2"/>
+    <rect x="18" y="16" width="84" height="16" rx="3" fill="#c41e3a"/>
+    <text x="60" y="28" text-anchor="middle" font-family="Georgia,serif" font-weight="700" font-size="12" fill="#ffd100">Hafiz</text>
+    <text x="60" y="40" text-anchor="middle" font-family="Arial,sans-serif" font-size="5.5" fill="#c41e3a" font-weight="700">Lal Khooh · Since 1998</text>
+  </svg>`;
   return `<div class="sheet">
     <div class="sheet-head">
       <span class="h-left">Sheet ${idx+1}/${totalSheets}${modeTag}</span>
       <span class="h-center">Hafiz Sweets Special Order Sheet<br/><span style="font-size:.78rem;font-weight:700">${dlabel}</span></span>
-      <span class="h-right"></span>
+      <span class="h-right">${logoSvg}</span>
     </div>
     ${body}
     ${sum}
@@ -1617,9 +1747,12 @@ function render(){
     const h = db[day].history || [];
     const idx = Math.max(0, Math.min(window._histIndex||0, h.length-1));
     const batch = h[idx];
-    chip.textContent = "History · " + (batch && batch.label ? batch.label : "Slot");
-    chip.style.background = "#3b1d1d"; chip.style.color = "#fca5a5";
-    hint.textContent = batch ? ("Completed: " + (batch.timeLabel||"")) : "";
+    const lab = "History · " + (batch && batch.label ? batch.label : "Slot");
+    chip.textContent = lab;
+    const labEl = document.getElementById('slotChipLabel');
+    if (labEl) labEl.textContent = lab;
+    chip.style.background = ""; chip.style.color = "";
+    hint.textContent = batch ? ("✅ Completed: " + (batch.timeLabel||"")) : "";
     // complete in menu
     // history batch tabs
     const tabs = $("sheetTabs"); tabs.innerHTML = "";
@@ -1638,12 +1771,15 @@ function render(){
       tabs.appendChild(b);
     });
   } else {
-    chip.textContent = db[day].slotLabel || "2nd Orders";
-    chip.style.background = "#1e3a5f"; chip.style.color = "#93c5fd";
+    const lab = db[day].slotLabel || "2nd Orders";
+    chip.textContent = lab;
+    const labEl = document.getElementById('slotChipLabel');
+    if (labEl) labEl.textContent = lab;
+    chip.style.background = ""; chip.style.color = "";
     if (isAfter7pm()){
-      hint.textContent = "After 7:00 PM: Complete moves current orders to History.";
+      hint.textContent = "🕐 After 7:00 PM: Complete se current orders History mein chale jate hain.";
     } else {
-      hint.textContent = "Before 7:00 PM = current slot. Complete is available after 7:00 PM.";
+      hint.textContent = "⏰ Before 7:00 PM = current slot. Complete button 7:00 PM ke baad available hota hai.";
     }
     const tabs = $("sheetTabs"); tabs.innerHTML = "";
     sheets.forEach((_,i)=>{
@@ -1871,9 +2007,12 @@ function normalize(o, type){
   };
 }
 function addManual(side){
-  const shop = prompt("Shop (English):",""); if (shop===null) return;
+  const shop = requireShop();
+  if (!shop) return;
   const name = prompt("Name:","");
+  if (name === null) return;
   const qty = prompt("Qty:", side==="other" ? "—" : "1 kg");
+  if (qty === null) return;
   const flavour = side==="other" ? "" : (prompt("Flavour:","")||"");
   const detail = prompt(side==="other" ? "Special note:" : "Tafseel Urdu:","")||"";
   placeOrder(normalize({ shopName:shop, customerName:name, qty, flavour, detailUrdu:detail }, side), side);
@@ -1967,9 +2106,12 @@ function extractNamesFromDetail(o){
   return o;
 }
 async function aiAdd(){
+  const shopFixed = requireShop();
+  if (!shopFixed) return;
   const raw = $("raw").value.trim();
   if (!raw) return popup("Empty", "Please paste or type an order first.");
   setStatus("Loading AI…");
+  showLoading(true);
   try {
     cachedCfg = null; // refresh keys
     const ai = await callAiWithFallback(SYSTEM, raw);
@@ -1984,18 +2126,16 @@ async function aiAdd(){
       parsed = JSON.parse(m[0]);
     }
     const list = Array.isArray(parsed.orders) ? parsed.orders : [];
-    const firstLine = raw.split(/\n/).map(x=>x.trim()).filter(Boolean)[0] || "";
     async function handleOne(o){
       let side = (o.side||"").toLowerCase();
-      if (side !== "fc" && side !== "sweets" && side !== "other") {
+      if (side !== "fc" && side !== "sweets" && side !== "other" && side !== "dry") {
         if (/cream|f\.?c/i.test(o.type||"")) side = "fc";
         else if (/\bdry\b|ڈرائی/i.test(o.type||o.detailUrdu||"")) side = "dry";
         else if (/jam|note|other|special/i.test(o.type||o.detailUrdu||"")) side = "other";
         else side = "sweets";
       }
-      if (!o.shopName || o.shopName === "—" || !String(o.shopName).trim()) {
-        o.shopName = firstLine || o.shopName || "—";
-      }
+      // Shop ALWAYS from dropdown — never from typed order text
+      o.shopName = shopFixed;
       if (o.detailUrdu && o.shopName) {
         const d = String(o.detailUrdu).trim();
         const sn = String(o.shopName).trim();
@@ -2034,6 +2174,8 @@ async function aiAdd(){
   } catch(e) {
     cachedKey = "";
     setStatus("Error"); popup("AI error", String(e.message||e));
+  } finally {
+    showLoading(false);
   }
 }
 
@@ -2176,7 +2318,36 @@ async function loadJobStatus(){
   }
 }
 
-const DEFAULT_ALL_SHOPS = ['KHODIAN', 'THEENG MORE', 'CHUNNIAN', 'LALYANI', 'STEEL BAGH', 'DAROGHY WALA', 'HARBANSE PURA', 'JORRY PUL', 'REHMAN PURA', 'IQBAL TOWN', 'MULTAN CHUNGI', 'KOT ABDUL MALIK', 'RACHNA TOWN', 'SANDA', 'BHATTI GATE', 'TOKA CHOWK', 'GULSHAN E RAVI', 'NIAZI ADA', 'NEW NIAZI ADA', 'NISHAAT', 'MAKAH COLONY', 'NADRABAD', 'ALFLAH', 'JOHAR TOWN', 'PEECO', 'KAMAHAN PIND', 'NAWAB TOWN', 'ARRAYAN PIND', 'CHUNG', 'MARGZAAR', 'THOKAR NIAZ BAIG'];
+const DEFAULT_ALL_SHOPS = [
+  'KHUDIAN','THEENG MORE','CHUNIAN','LALYANI','STEEL BAGH','CHUNG',
+  'DAROGHY WALA','HARBANSE PURA','JORAY PUL','REHMANPURA','ALLAMA IQBAL TOWN','MULTAN CHUNGI','THOKAR NIAZ BAIG',
+  'KOT ABDUL MALIK','RACHNA TOWN','SANDA','BHATI GATE','TOKA CHOWK','GULSHAN-E-RAVI','NIAZI ADDA','NEW NIAZI ADDA','MARGHZAR',
+  'NISHAT COLONY','MAKKAH COLONY','NADARABAD','AL-FALAH TOWN','JOHAR TOWN','PECO ROAD','KAMAHAN PIND','NAWAB TOWN','ARRAYAN PIND'
+];
+function fillShopSelect(){
+  const sel = document.getElementById('shopSelect');
+  if (!sel) return;
+  const cur = sel.value;
+  sel.innerHTML = '<option value="">— Select shop —</option>' +
+    DEFAULT_ALL_SHOPS.map(s => '<option value="'+s+'">'+s+'</option>').join('');
+  if (cur && DEFAULT_ALL_SHOPS.includes(cur)) sel.value = cur;
+}
+function getSelectedShop(){
+  const sel = document.getElementById('shopSelect');
+  return sel && sel.value ? sel.value.trim() : '';
+}
+function requireShop(){
+  const shop = getSelectedShop();
+  if (!shop) {
+    popup("Shop required", "Pehle upar se Shop select karein. Order text mein shop type nahi hoga.");
+    return null;
+  }
+  return shop;
+}
+function showLoading(on){
+  const el = document.getElementById('loadingOverlay');
+  if (el) el.classList.toggle('show', !!on);
+}
 
 function closeAllShops(){ $("allShopsModal").classList.remove("show"); }
 function openAllShopsPage(){
@@ -2627,13 +2798,39 @@ ensureDayLocal();
   const sel = document.getElementById("printOrient");
   if (sel) sel.value = localStorage.getItem("od_orient") || "landscape";
 })();
-loadDayOnline().then(() => { maybeShowMonthlyOnLastDay(); });
+fillShopSelect();
+
+// Sidebar auto show/hide on hover
+(function(){
+  const layout = document.getElementById('layoutRoot');
+  const side = document.getElementById('sidebarPanel');
+  if (!layout || !side) return;
+  let hideT = null;
+  function openSide(){ clearTimeout(hideT); layout.classList.add('sidebar-open'); }
+  function closeSide(){
+    hideT = setTimeout(() => layout.classList.remove('sidebar-open'), 280);
+  }
+  side.addEventListener('mouseenter', openSide);
+  side.addEventListener('mouseleave', closeSide);
+  // mobile: tap rail toggles
+  const rail = side.querySelector('.sidebar-rail');
+  if (rail) rail.addEventListener('click', () => layout.classList.toggle('sidebar-open'));
+  // start open on desktop for first use
+  if (window.innerWidth > 960) layout.classList.add('sidebar-open');
+})();
+
+showLoading(true);
+loadDayOnline().then(() => {
+  maybeShowMonthlyOnLastDay();
+  showLoading(false);
+}).catch(() => showLoading(false));
 
 document.addEventListener("DOMContentLoaded", function(){
   ["nullShopSelect","nullAction","nullKind"].forEach(function(id){
     var el = document.getElementById(id);
     if (el) el.addEventListener("change", updateNullPreview);
   });
+  fillShopSelect();
 });
 </script>
 </body>
