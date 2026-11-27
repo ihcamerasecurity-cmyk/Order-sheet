@@ -581,6 +581,17 @@
 
       <label>✍️ ORDER TEXT</label>
       <textarea id="raw" placeholder="Order details paste/type karein (shop name select se aayega)"></textarea>
+      <label>⚡ Quick Qty</label>
+      <div id="qtyQuickBar" style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:4px">
+        <button type="button" class="secondary sm" onclick="insertQty('1 Pound')">1 Pound</button>
+        <button type="button" class="secondary sm" onclick="insertQty('2 Pound')">2 Pound</button>
+        <button type="button" class="secondary sm" onclick="insertQty('3 Pound')">3 Pound</button>
+        <button type="button" class="secondary sm" onclick="insertQty('1 KG')">1 KG</button>
+        <button type="button" class="secondary sm" onclick="insertQty('2 KG')">2 KG</button>
+        <button type="button" class="secondary sm" onclick="insertQty('5 KG')">5 KG</button>
+        <button type="button" class="secondary sm" onclick="insertQty('½ KG')">½ KG</button>
+        <button type="button" class="secondary sm" onclick="insertQty('250 gm')">250 gm</button>
+      </div>
       <button onclick="aiAdd()">🤖 Add Order with AI</button>
       <div style="display:flex;gap:6px;flex-wrap:wrap">
         <button class="secondary" style="flex:1;min-width:60px" onclick="addManual('sweets')">🍬 +Sweets</button>
@@ -638,12 +649,20 @@
       <option value="other">Other</option>
       <option value="dry">Dry</option>
     </select>
-    <label>Shop (English)</label><input id="eShop"/>
+    <label>🏪 Shop</label>
+    <select id="eShop"></select>
+    <label>📍 Deliver to (optional — e.g. PECO → Makkah Colony)</label>
+    <select id="eDeliverTo">
+      <option value="">— Same as shop / no change —</option>
+    </select>
+    <input id="eDeliverToCustom" placeholder="Or type custom delivery location" style="margin-top:6px"/>
     <label>1st Name (top)</label><input id="eName1" placeholder="Top name"/>
     <label>2nd Name</label><input id="eName2" placeholder="Middle name"/>
     <label>3rd Name (bottom)</label><input id="eName3" placeholder="Bottom name"/>
     <label>Name (legacy single)</label><input id="eName"/>
-    <label>Qty</label><input id="eQty"/>
+    <label>Qty</label>
+    <input id="eQty"/>
+    <div id="editQtyQuick" style="display:flex;flex-wrap:wrap;gap:5px;margin-top:6px"></div>
     <label>Flavour</label><input id="eFlavour"/>
     <label>Description</label><textarea id="eDetail" style="min-height:90px"></textarea>
     <label>Order date (sheet date — change to move)</label>
@@ -651,7 +670,7 @@
     <label style="display:flex;align-items:center;gap:8px;margin-top:8px">
       <input type="checkbox" id="ePicChg" style="width:auto"/> Picture charges
     </label>
-    <label>Delivery (date / time if any)</label><input id="eDelivery" placeholder="e.g. 12 Nov · 6 PM"/>
+    <label>Delivery date / time (if any)</label><input id="eDelivery" placeholder="e.g. 12 Nov · 6 PM"/>
     <div class="row">
       <button class="secondary" onclick="closeModal()">Cancel</button>
       <button class="red" onclick="deleteTicket()">Delete</button>
@@ -1410,6 +1429,7 @@ function namesBlock(o){
 function ticketHtml(o, i, side){
   const prefix = side==="fc" ? "FC" : side==="other" ? "O" : side==="dry" ? "D" : "S";
   const shop = (o.shopName || "—").trim() || "—";
+  const deliverTo = (o.deliverTo || "").trim();
   const tl = typeLabel(side);
   const flav = o.flavour ? `<div class="t-line"><b>Flav.</b> ${esc(o.flavour)}</div>` : "";
   const rate = o.rateNote ? `<div class="t-line"><b>Rate.</b> ${esc(o.rateNote)}</div>` : "";
@@ -1426,6 +1446,9 @@ function ticketHtml(o, i, side){
     : "";
   const pic = o.pictureCharges ? `<div class="pic-chg">PHOTO / PICTURE CHARGES</div>` : "";
   const moved = (o.movedFrom || (o.originalDay && o.originalDay !== day)) ? " moved-hl" : "";
+  const deliverLine = (deliverTo && deliverTo.toLowerCase() !== shop.toLowerCase())
+    ? `<div class="t-delivery" style="background:#fef3c7;border-color:#f59e0b;color:#92400e;">📍 Deliver to: <b>${esc(deliverTo)}</b></div>`
+    : "";
   return `<div class="ticket${moved}" onclick="openEdit('${side}',${i})">
     ${pic}
     <div class="type-badge ${tl.cls}">${esc(tl.en)} · ${esc(tl.ur)}</div>
@@ -1437,8 +1460,13 @@ function ticketHtml(o, i, side){
     ${namesBlock(o)}
     ${flav}
     ${rate}
-    ${deliv ? `<div class="t-delivery">Delivery: ${esc(deliv)}</div>` : ""}
+    ${deliverLine}
+    ${deliv ? `<div class="t-delivery">Time: ${esc(deliv)}</div>` : ""}
     ${detailBlock}
+    <div style="margin-top:4px;text-align:right;" onclick="event.stopPropagation()">
+      <button type="button" class="sm" style="width:auto;padding:3px 8px;font-size:10px;background:#25D366;border-radius:8px;"
+        onclick="shareOrderWhatsApp('${side}',${i},event)" title="WhatsApp">📲</button>
+    </div>
   </div>`;
 }
 function colHtml(title, side, list, cls){
@@ -1822,10 +1850,32 @@ function openEdit(side,i){
   if (viewingHistory()){ popup("Read-only", "History view cannot be edited."); return; }
   editRef = { side, i };
   const o = curSheet()[side][i];
+  fillShopSelect();
   if ($("eDept")) $("eDept").value = side;
   if ($("eOrderDate")) $("eOrderDate").value = day;
   if ($("ePicChg")) $("ePicChg").checked = !!o.pictureCharges;
-  $("eShop").value = o.shopName||"";
+  if ($("eShop")) {
+    const sn = (o.shopName||"").trim();
+    if (sn && !DEFAULT_ALL_SHOPS.includes(sn)) {
+      const opt = document.createElement('option');
+      opt.value = sn; opt.textContent = sn;
+      $("eShop").appendChild(opt);
+    }
+    $("eShop").value = sn;
+  }
+  if ($("eDeliverTo")) {
+    const dt = (o.deliverTo||"").trim();
+    if (dt && DEFAULT_ALL_SHOPS.includes(dt)) {
+      $("eDeliverTo").value = dt;
+      if ($("eDeliverToCustom")) $("eDeliverToCustom").value = "";
+    } else if (dt) {
+      $("eDeliverTo").value = "";
+      if ($("eDeliverToCustom")) $("eDeliverToCustom").value = dt;
+    } else {
+      $("eDeliverTo").value = "";
+      if ($("eDeliverToCustom")) $("eDeliverToCustom").value = "";
+    }
+  }
   const ns = Array.isArray(o.names) ? o.names : [];
   const n1 = (ns[0] && (ns[0].en||ns[0].ur)) ? (ns[0].en || ns[0].ur) : (o.name1 || o.nameOnCakeEn || o.customerName || "");
   const n2 = (ns[1] && (ns[1].en||ns[1].ur)) ? (ns[1].en || ns[1].ur) : (o.name2 || "");
@@ -1852,7 +1902,10 @@ function saveTicket(){
   const oldSnap = snapOrder(o);
   if (!o.originalDay) o.originalDay = day;
   if (!o.originalSide) o.originalSide = oldSide;
-  o.shopName=$("eShop").value.trim();
+  o.shopName=($("eShop")&&$("eShop").value||"").trim();
+  const delSel = ($("eDeliverTo")&&$("eDeliverTo").value||"").trim();
+  const delCustom = ($("eDeliverToCustom")&&$("eDeliverToCustom").value||"").trim();
+  o.deliverTo = delCustom || delSel || "";
   const a1 = ($("eName1")&&$("eName1").value||$("eName").value||"").trim();
   const a2 = ($("eName2")&&$("eName2").value||"").trim();
   const a3 = ($("eName3")&&$("eName3").value||"").trim();
@@ -1998,6 +2051,7 @@ function normalize(o, type){
     rateNote: o.rateNote || "",
     detailUrdu: o.detailUrdu || "",
     delivery: o.delivery || "",
+    deliverTo: o.deliverTo || "",
     type: o.type || type,
     createdAt: o.createdAt || Date.now(),
     originalDay: o.originalDay || day,
@@ -2322,15 +2376,41 @@ const DEFAULT_ALL_SHOPS = [
   'KHUDIAN','THEENG MORE','CHUNIAN','LALYANI','STEEL BAGH','CHUNG',
   'DAROGHY WALA','HARBANSE PURA','JORAY PUL','REHMANPURA','ALLAMA IQBAL TOWN','MULTAN CHUNGI','THOKAR NIAZ BAIG',
   'KOT ABDUL MALIK','RACHNA TOWN','SANDA','BHATI GATE','TOKA CHOWK','GULSHAN-E-RAVI','NIAZI ADDA','NEW NIAZI ADDA','MARGHZAR',
-  'NISHAT COLONY','MAKKAH COLONY','NADARABAD','AL-FALAH TOWN','JOHAR TOWN','PECO ROAD','KAMAHAN PIND','NAWAB TOWN','ARRAYAN PIND'
+  'NISHAT COLONY','MAKKAH COLONY','NADARABAD','AL-FALAH TOWN','JOHAR TOWN','PECO ROAD','KAMAHAN PIND','NAWAB TOWN','ARRAYAN PIND',
+  'FACTORY SALE','LOCAL CUSTOMER'
 ];
 function fillShopSelect(){
-  const sel = document.getElementById('shopSelect');
-  if (!sel) return;
-  const cur = sel.value;
-  sel.innerHTML = '<option value="">— Select shop —</option>' +
+  const opts = '<option value="">— Select shop —</option>' +
     DEFAULT_ALL_SHOPS.map(s => '<option value="'+s+'">'+s+'</option>').join('');
-  if (cur && DEFAULT_ALL_SHOPS.includes(cur)) sel.value = cur;
+  const sel = document.getElementById('shopSelect');
+  if (sel) {
+    const cur = sel.value;
+    sel.innerHTML = opts;
+    if (cur && DEFAULT_ALL_SHOPS.includes(cur)) sel.value = cur;
+  }
+  const eShop = document.getElementById('eShop');
+  if (eShop) {
+    const cur = eShop.value;
+    eShop.innerHTML = opts;
+    if (cur) eShop.value = cur;
+  }
+  const eDel = document.getElementById('eDeliverTo');
+  if (eDel) {
+    const cur = eDel.value;
+    eDel.innerHTML = '<option value="">— Same as shop / no change —</option>' +
+      DEFAULT_ALL_SHOPS.map(s => '<option value="'+s+'">'+s+'</option>').join('');
+    if (cur) eDel.value = cur;
+  }
+  const eq = document.getElementById('editQtyQuick');
+  if (eq && !eq.dataset.ready) {
+    eq.dataset.ready = '1';
+    ['1 Pound','2 Pound','3 Pound','1 KG','2 KG','5 KG','½ KG','250 gm'].forEach(q => {
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'secondary sm'; b.textContent = q;
+      b.onclick = () => { if ($('eQty')) $('eQty').value = q; };
+      eq.appendChild(b);
+    });
+  }
 }
 function getSelectedShop(){
   const sel = document.getElementById('shopSelect');
@@ -2347,6 +2427,73 @@ function requireShop(){
 function showLoading(on){
   const el = document.getElementById('loadingOverlay');
   if (el) el.classList.toggle('show', !!on);
+}
+function insertQty(q){
+  const ta = document.getElementById('raw');
+  if (!ta) return;
+  const v = ta.value.trim();
+  ta.value = v ? (v + '\n' + q) : q;
+  ta.focus();
+}
+function sideFullName(side){
+  if (side === 'fc') return 'Fresh Cream Cake';
+  if (side === 'sweets') return 'Sweet / Mithai';
+  if (side === 'dry') return 'Dry Item';
+  return 'Other / Special Note';
+}
+function buildWhatsAppOrderMsg(o, side){
+  const shop = (o.shopName || '—').trim();
+  const deliverTo = (o.deliverTo || '').trim();
+  const qty = (o.qty || '').trim();
+  const flav = (o.flavour || '').trim();
+  const det = (o.detailUrdu || '').trim();
+  const deliv = (o.delivery || '').trim();
+  const names = [];
+  if (o.name1) names.push(o.name1);
+  if (o.name2) names.push(o.name2);
+  if (o.name3) names.push(o.name3);
+  if (!names.length && o.nameOnCakeEn) names.push(o.nameOnCakeEn);
+  if (!names.length && o.customerName && o.customerName !== '—') names.push(o.customerName);
+
+  let lines = [];
+  lines.push('*HAFIZ SWEETS — LAL KHOOH*');
+  lines.push('Sweets & Bakers · Since 1998');
+  lines.push('────────────────');
+  lines.push('*Special Order Confirmation*');
+  lines.push('');
+  lines.push('*Shop:* ' + shop);
+  if (deliverTo && deliverTo.toLowerCase() !== shop.toLowerCase()) {
+    lines.push('*Deliver To:* ' + deliverTo);
+  }
+  lines.push('*Department:* ' + sideFullName(side));
+  if (qty) lines.push('*Quantity:* ' + qty);
+  if (flav) lines.push('*Flavour:* ' + flav);
+  if (names.length) lines.push('*Name on Item:* ' + names.join(' · '));
+  if (deliv) lines.push('*Delivery Time:* ' + deliv);
+  if (o.pictureCharges) lines.push('*Picture Charges:* Yes');
+  if (det) {
+    lines.push('');
+    lines.push('*Order Details:*');
+    lines.push(det);
+  }
+  lines.push('');
+  lines.push('────────────────');
+  lines.push('Thank you for your order.');
+  lines.push('For any query: *03257436319*');
+  lines.push('Hafiz Sweets · Head Office');
+  return lines.join('\n');
+}
+function shareOrderWhatsApp(side, idx, ev){
+  if (ev) { ev.preventDefault(); ev.stopPropagation(); }
+  try {
+    const o = curSheet()[side][idx];
+    if (!o) return;
+    const msg = encodeURIComponent(buildWhatsAppOrderMsg(o, side));
+    window.open('https://wa.me/?text=' + msg, '_blank');
+    toast('WhatsApp', 'Opening WhatsApp…', true);
+  } catch (e) {
+    popup('Error', String(e.message || e));
+  }
 }
 
 function closeAllShops(){ $("allShopsModal").classList.remove("show"); }
